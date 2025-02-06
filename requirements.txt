@@ -1,0 +1,6 @@
+langchain-google-genai
+langchain-neo4j
+graphdatascience
+python-dotenv
+langchain-openai
+langchain-core
