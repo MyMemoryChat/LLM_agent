@@ -1,0 +1,16 @@
+```
+("entity"|Sophie|Person|Sophie is the narrator of the text. She comes from Wuhan, went to Paris in the winter, has a boyfriend named Noé, and a dog named Rookie.)
+("entity"|Wuhan|Location|A city where Sophie comes from.)
+("entity"|Paris|Location|A city Sophie visited this winter.)
+("entity"|Winter|Date|The season when Sophie visited Paris.)
+("entity"|Noé|Person|Sophie\'s boyfriend who designed an app.)
+("entity"|Rookie|Person|Sophie\'s Shiba Inu dog.)
+
+("relationship"|Sophie|Wuhan|Sophie comes from Wuhan.|100)
+("relationship"|Sophie|Paris|Sophie visited Paris this winter.|95)
+("relationship"|Sophie|Winter|Sophie\'s trip to Paris happened in the winter.|90)
+("relationship"|Sophie|Noé|Noé is Sophie\'s boyfriend.|98)
+("relationship"|Noé|App|Noé designed an app.|100)
+("relationship"|Sophie|Rookie|Rookie is Sophie\'s dog.|98)
+
+```
