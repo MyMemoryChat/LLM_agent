@@ -4,3 +4,5 @@ graphdatascience
 python-dotenv
 langchain-openai
 langchain-core
+langchain-community
+pillow
