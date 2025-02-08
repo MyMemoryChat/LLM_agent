@@ -125,7 +125,10 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             WHERE s:Query and t:__Entity__
             RETURN t.name AS entityName,
             labels(t) AS entityType,
-            t.description AS entityDescription
+            t.description AS entityDescription,
+            t.location AS imageLocation,
+            t.date AS imageDate,
+            t.image_path AS imagePath
             LIMIT 3
         """
     )
@@ -134,7 +137,10 @@ def search_neo4j_graph(question: str, filter = "") -> str:
     query_neo4j_graph("MATCH (q:Query) DELETE q")
     result = "\n"
     for _, row in top_3.iterrows():
-        result += f'("entity"|{row["entityName"]}|{row["entityType"]}|{row["entityDescription"]})\n'
+        if row["entityType"] == 'Image':
+            result += f'("image"|{row["entityName"]}|{row["imagePath"]}|{row["imageLocation"]}|{row["imageDate"]}|row{["entityDescription"]})\n'
+        else:
+            result += f'("entity"|{row["entityName"]}|{row["entityType"]}|{row["entityDescription"]})\n'
         
     result += "\n"
     for idx, row in top_3.iterrows():
