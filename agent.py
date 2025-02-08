@@ -1,7 +1,10 @@
 
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted
 from langchain_core.prompts import PromptTemplate
 from tools import update_neo4j_graph, search_neo4j_graph
+from PIL import Image
+import time
 
 import os
 from dotenv import load_dotenv
@@ -71,7 +74,14 @@ class ReActAgent:
         """
         if verbose:
             print("User:", self.messages[-1]["parts"])
-        completion = self.model.send_message(self.messages[-1]["parts"])
+        while True:
+            try:
+                completion = self.model.send_message(self.messages[-1]["parts"])
+                break
+            except ResourceExhausted:
+                time.sleep(5)
+            except Exception as e:
+                return f"An error occurred: {e}"
         if verbose:
             print("Model:" + completion.text)
         return completion.text
@@ -117,3 +127,29 @@ class AnswerAgent(ReActAgent):
         )
         
         super().__init__(model, tools, system)
+        
+class PictureAgent(ReActAgent):
+    def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
+        system="You are a smart and curious database management agent. From a given image with a description, you add the knowledge from it to a knowledge graph."
+        
+        tools = [search_neo4j_graph, update_neo4j_graph]
+        
+        instruction_template = PromptTemplate.from_template(open("./prompt_template/IMAGE_RECOGNITION/IMAGE_RECOGNITION.md", "r").read())
+        instructions = instruction_template.invoke({"tools": tools}).to_string()
+        
+        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+        model = genai.GenerativeModel(
+            model_name = os.environ.get("DEFAULT_AI_GEMINI_MODEL"),
+            system_instruction= instructions,
+            generation_config = genai.GenerationConfig(
+                max_output_tokens=max_output_tokens,
+                temperature=temperature,
+            )
+        )
+        
+        super().__init__(model, tools, system)
+        
+    def __call__(self, image_path: str, description: str = None, verbose=False):
+        image = Image.open(image_path)
+        
+        return super().__call__(message=[image_path, image, description], verbose=verbose)

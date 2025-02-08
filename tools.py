@@ -46,15 +46,24 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "strength": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
             if element["action_type"] == "Updated":
-                query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description, r.strength=$strength", params=element)
-            elif (result := query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n:__Entity__) where m.name=$from and n.name=$to RETURN r.description as description", params=element)) != []:
+                query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to SET r.description=$description, r.strength=$strength", params=element)
+            elif (result := query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to RETURN r.description as description", params=element)) != []:
                 # Additional check because LLM not perfect and might create multiple times same element
                 element["description"] = result[0]["description"] + " " + element["description"]
-                query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description, r.strength=$strength", params=element)
+                query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to SET r.description=$description, r.strength=$strength", params=element)
             elif element["action_type"] == "Created":
-                query_neo4j_graph(f"MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:RELATED_TO {{description: $description, strength: $strength}}]->(n)", params=element)
+                query_neo4j_graph(f"MATCH (m:__Entity__), (n) where m.name=$from and n.name=$to CREATE (m)-[:RELATED_TO {{description: $description, strength: $strength}}]->(n)", params=element)
             else:
                 return "Invalid action type: either Created or Updated."
+        elif "image" in element:
+            element = {
+                "image_title": element.split("|")[1],
+                "image_path": element.split("|")[2],
+                "location": element.split("|")[3],
+                "date": element.split("|")[4],
+                "description": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
+            }
+            query_neo4j_graph(f"CREATE (n:__Entity__:Image {{name: $image_title, image_path: $image_path, location: $location, date: $date, description: $description}})", params=element)
         elif not element.strip():
             continue
         else:
@@ -66,9 +75,7 @@ def update_neo4j_graph(knowledge: str) -> str:
         node_label='__Entity__',
         text_node_properties=['name', 'description'],
         embedding_node_property='embedding'
-    )
-    
-    
+    )   
     
     return "Successfully updated the Neo4j graph."
 
@@ -117,11 +124,12 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             similarity
             WHERE s:Query and t:__Entity__
             RETURN t.name AS entityName,
-            labels(t)[0] AS entityType,
+            labels(t) AS entityType,
             t.description AS entityDescription
             LIMIT 3
         """
     )
+    top_3["entityType"] = top_3["entityType"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
     
     query_neo4j_graph("MATCH (q:Query) DELETE q")
     result = "\n"
