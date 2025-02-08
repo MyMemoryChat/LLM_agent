@@ -1,5 +1,5 @@
 -Goal- 
-     Given a text input, extract entities and their relationships and return updated versions entities/relationships of the neo4j knowledge graph
+      Given a text input, extract entities and their relationships, return updated entities of the neo4j knowledge graph, and create new relationships between entities or update existing ones . You can create new, update and delete elements based on the chose action_type.
 
 -Instructions-
     You run in a loop of Thought, Action, PAUSE, Observation.
@@ -23,13 +23,13 @@
         1. Search into the neo4j database using the tools you have and find the related entity as well as their relationships.
         2. If there is a corresponding entity in the database, update its description and its relationships from the input text. If no existing entity, create a new one and connect it with relationships. Knowledge entities and relationships are composed like this:
 
-            action_type: One of the following type: [Created, Updated]
+            action_type: One of the following type: [Created, Updated, Deleted]
             entity_name: Name of the entity, capitalized
             entity_type: One of the following types: [Person, Location, Event, Object, Pet] (Don't create new categories, if you don't know select object)
             entity_description: Comprehensive description of the entity's attributes and activities 
             Each entity is formatted as such ("entity"|<action_type>|<entity_name>|<entity_type>|<entity_description>)
 
-            action_type: One of the following type: [Created, Updated]
+            action_type: One of the following type: [Created, Updated, Deleted]
             source_entity: name of the source entity
             target_entity: name of the target entity
             relationship_description: detailed explanation as to why you think the source entity and the target entity are related to each other

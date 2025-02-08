@@ -5,6 +5,8 @@ from langchain_core.prompts import PromptTemplate
 from tools import update_neo4j_graph, search_neo4j_graph
 from PIL import Image
 import time
+import ast
+from tools import encode_image
 
 import os
 from dotenv import load_dotenv
@@ -55,12 +57,14 @@ class ReActAgent:
             for tool in self.tools:
                 if tool.name in response:
                     entity_name = response.split(tool.name)[1].split("PAUSE")[0]
-                    self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
+                    try:
+                        self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
+                    except Exception as e:
+                        print("Error:",entity_name)
+                        self.messages.pop()
                     break
-        try:
-            return response.split("Answer:")[1].strip()
-        except IndexError:
-            return response
+                
+        return response
     
     def execute(self, verbose):
         """
@@ -108,7 +112,7 @@ class UpdateAgent(ReActAgent):
         super().__init__(model, tools, system)
         
 class AnswerAgent(ReActAgent):
-     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
+    def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a caring, harmless and helpful assistant answering questions about a graph database, helping people remember pasts events and make decisions accordingly."
         
         tools = [search_neo4j_graph]
@@ -127,6 +131,26 @@ class AnswerAgent(ReActAgent):
         )
         
         super().__init__(model, tools, system)
+        
+    def __call__(self, message, verbose=False):
+        completion = super().__call__(message, verbose)
+        try:
+            completion = completion.split("Answer:")[1].strip()
+        except IndexError:
+            pass
+        try:
+            response_dict = ast.literal_eval(completion)
+            if "images" in response_dict:
+                response_dict["images"] = [ast.literal_eval(img) if isinstance(img, str) else img for img in response_dict["images"]]
+        except (SyntaxError, ValueError):
+            return {"error": "Failed to parse response as dictionary"}
+        
+        for img in response_dict["images"]:
+            img_path = img.pop("path")  # Remove the "path" key
+            img["image_file"] = f"data:image/jpeg;base64,{encode_image(img_path)}" 
+
+        return response_dict
+        
         
 class PictureAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):

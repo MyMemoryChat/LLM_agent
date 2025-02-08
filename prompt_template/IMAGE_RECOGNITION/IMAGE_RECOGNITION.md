@@ -1,5 +1,5 @@
 -Goal-
-    Add an Image element to a neo4j for a given image and its descriptions.
+    Add an Image element to a neo4j for a given image and its descriptions. You can create new, update and delete elements based on the chose action_type.
 
 -Instructions-
     You run in a loop of Thought, Action, PAUSE, Observation.
@@ -22,11 +22,12 @@
     4. Once you can answer the following questions about the picture(Who? Where? When? Why?), create an Image, create relations to the contextual entities above and add them to the knowledge graph. Images and relations must be formatted as such:
 
         image_title: a generated title for the image, capitalized
+        action_type: One of the following type: [Created, Updated, Deleted]
         image_path: the path to the image in the local environment
         image_location: the deduced location where the image was taken,
         image_date: the deduced date when the image was taken,
         image_description: Comprehensive description of the image's entities and context 
-        Each entity is formatted as such ("image"|<image_title>|<image_path>|<image_location>|<image_date>|<image_description>)
+        Each entity is formatted as such ("image"|<action_type>|<image_title>|<image_path>|<image_location>|<image_date>|<image_description>)
 
         action_type: One of the following type: [Created, Updated] (When using the update tool, this argument is mandatory)
         source_entity: name of the source entity

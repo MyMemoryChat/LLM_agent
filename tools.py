@@ -3,12 +3,19 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 from graphdatascience import GraphDataScience
 from langchain.agents import tool
-import pandas as pd
+import base64
 
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+def encode_image(image_path):
+    """Convert image file to a Base64 string."""
+    if not os.path.exists(image_path):  # Handle missing files
+        return None
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode("utf-8")
 
 def query_neo4j_graph(query, params=None):
     # Load LangChain Neo4jGraph instance 
@@ -27,7 +34,9 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "type": element.split("|")[3],
                 "description": element.split("|")[4][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
-            if element["action_type"] == "Updated":
+            if element["action_type"] == "Deleted":
+                query_neo4j_graph(f"MATCH (n:{':'.join(['__Entity__',element['type']])}) where n.name=$name DETACH DELETE n", params=element)
+            elif element["action_type"] == "Updated":
                 query_neo4j_graph(f"MATCH (n:{':'.join(['__Entity__',element['type']])}) where n.name=$name SET n.description=$description", params=element)
             elif (result := query_neo4j_graph(f"MATCH (n:{':'.join(['__Entity__',element['type']])}) where n.name=$name RETURN n.description as description", params=element)) != []:
                 # Additional check because LLM not perfect and might create multiple times same element
@@ -45,7 +54,9 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "description": element.split("|")[4],
                 "strength": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
-            if element["action_type"] == "Updated":
+            if element["action_type"] == "Deleted":
+                query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to DELETE r", params=element)
+            elif element["action_type"] == "Updated":
                 query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to SET r.description=$description, r.strength=$strength", params=element)
             elif (result := query_neo4j_graph(f"MATCH (m:__Entity__)-[r]->(n) where m.name=$from and n.name=$to RETURN r.description as description", params=element)) != []:
                 # Additional check because LLM not perfect and might create multiple times same element
@@ -57,13 +68,24 @@ def update_neo4j_graph(knowledge: str) -> str:
                 return "Invalid action type: either Created or Updated."
         elif "image" in element:
             element = {
-                "image_title": element.split("|")[1],
-                "image_path": element.split("|")[2],
-                "location": element.split("|")[3],
-                "date": element.split("|")[4],
-                "description": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
+                "action_type": element.split("|")[1],
+                "image_title": element.split("|")[2],
+                "image_path": element.split("|")[3],
+                "location": element.split("|")[4],
+                "date": element.split("|")[5],
+                "description": element.split("|")[6][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
-            query_neo4j_graph(f"CREATE (n:__Entity__:Image {{name: $image_title, image_path: $image_path, location: $location, date: $date, description: $description}})", params=element)
+            if element["action_type"] == "Deleted":
+                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path DETACH DELETE r", params=element)
+            elif element["action_type"] == "Updated":
+                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title SET m.image_path=$image_path, m.location=$location, m.date=$date, m.description=$description", params=element)
+            elif (result := query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path RETURN r", params=element)) != []:
+                # Additional check because LLM not perfect and might create multiple times same element
+                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path SET m.image_path=$image_path, m.location=$location, m.date=$date, m.description=$description", params=element)
+            elif element["action_type"] == "Created":
+                query_neo4j_graph(f"CREATE (n:__Entity__:Image {{name: $image_title, image_path: $image_path, location: $location, date: $date, description: $description}})", params=element)
+            else:
+                return "Invalid action type: either Created or Updated."
         elif not element.strip():
             continue
         else:
@@ -138,7 +160,7 @@ def search_neo4j_graph(question: str, filter = "") -> str:
     result = "\n"
     for _, row in top_3.iterrows():
         if row["entityType"] == 'Image':
-            result += f'("image"|{row["entityName"]}|{row["imagePath"]}|{row["imageLocation"]}|{row["imageDate"]}|row{["entityDescription"]})\n'
+            result += f'("image"|{row["entityName"]}|{row["imagePath"]}|{row["imageLocation"]}|{row["imageDate"]}|{row["entityDescription"]})\n'
         else:
             result += f'("entity"|{row["entityName"]}|{row["entityType"]}|{row["entityDescription"]})\n'
         
