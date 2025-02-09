@@ -76,12 +76,12 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "description": element.split("|")[6][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
             if element["action_type"] == "Deleted":
-                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path DETACH DELETE r", params=element)
+                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path DETACH DELETE m", params=element)
             elif element["action_type"] == "Updated":
                 query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title SET m.image_path=$image_path, m.location=$location, m.date=$date, m.description=$description", params=element)
-            elif (result := query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path RETURN r", params=element)) != []:
+            elif (result := query_neo4j_graph(f"MATCH (m:Image) where m.image_path=$image_path RETURN m", params=element)) != []:
                 # Additional check because LLM not perfect and might create multiple times same element
-                query_neo4j_graph(f"MATCH (m:Image) where m.name=$image_title and m.image_path=$image_path SET m.image_path=$image_path, m.location=$location, m.date=$date, m.description=$description", params=element)
+                query_neo4j_graph(f"MATCH (m:Image) where m.image_path=$image_path SET m.name=$image_title, m.image_path=$image_path, m.location=$location, m.date=$date, m.description=$description", params=element)
             elif element["action_type"] == "Created":
                 query_neo4j_graph(f"CREATE (n:__Entity__:Image {{name: $image_title, image_path: $image_path, location: $location, date: $date, description: $description}})", params=element)
             else:

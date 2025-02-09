@@ -1,44 +1,47 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from agent import AnswerAgent, PictureAgent, UpdateAgent
+import os
+import base64
+import re
 
 app = Flask(__name__)
+CORS(app)
 
 image_folder = "./images"
 agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Server is running!"
-
-@app.route("/text", methods=["POST"])
-def generate_answer_from_text_only():
-    data = request.json
-    text = data["text"]
-    agents[1](message=text)
-    answer = agents[0](message=text)
-    return jsonify(answer)
-
-@app.route("/image", methods=["POST"])
+@app.route("/", methods=["POST"])
 def receive_data():
-    if "image" not in request.files:
-        return jsonify({"error": "No image part in the request"}), 400
-    
-    image = request.files["image"]
-    text = request.form.get("text", "")
-    
-    try:
-        image_path = f"{image_folder}/{image.filename}"
-        image.save(image_path)
-        agents[2](image_path=image_path, description=text)
-        message = "Image saved and added to the database."
-    except Exception as e:
-        message = f"Failed to save image: {e}"
+    text = request.json.get("text")
+    image_base64 = request.json.get("image")
+    if image_base64 is None:
+        print('Image not found in request.json')
+        try:
+            agents[1](message=text, verbose=True)
+            message = "New knowledge added to the database."
+        except Exception as e:
+            message = f"Failed to add new knowledge: {e}"
+    else:
+        print('Image found in request.json')
+        try:
+            i=0
+            while os.path.exists(f"{image_folder}/image{i}.jpg"):
+                i+=1
+            image_path = f"{image_folder}/image{i}.jpg"
+            
+            image_base64 = re.sub(r"^data:image/\w+;base64,", "", image_base64)
+            image_data = base64.b64decode(image_base64)
+            with open(image_path, "wb") as img_file:
+                img_file.write(image_data)
+            agents[2](image_path=image_path, description=text, verbose=True)
+            message = "Image saved and added to the database."
+        except Exception as e:
+            message = f"Failed to save image: {e}"
         
-    answer = agents[0](message=text)
-    
     return jsonify({
         "message": message,
-        "answer": answer
+        "answer": agents[0](message=text)
     })
 
 if __name__ == "__main__":

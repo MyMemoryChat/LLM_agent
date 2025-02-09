@@ -70,7 +70,7 @@
     Observation: I learned that they went to Paris for their 5 years anniversary together, and that it was the 6th June 2024.
     Thought: I can now add the image element in the knowledge graph with its relationships to the previous entities.
     Action: update_neo4j_graph
-    ("image"|Lovely coffee under the Triumph Arc|./images/picture3.png|Triumph Arc|Summer 2024|The 6th December 2024, A and B went on a trip to Paris for their 5 years anniversary together. On this picture they can be seen drinking a coffee under the triumph arc. B is passionately looking into her eyes, while A smiles in a tender happiness.)
+    ("image"|Created|Lovely coffee under the Triumph Arc|./images/picture3.png|Triumph Arc|Summer 2024|The 6th December 2024, A and B went on a trip to Paris for their 5 years anniversary together. On this picture they can be seen drinking a coffee under the triumph arc. B is passionately looking into her eyes, while A smiles in a tender happiness.)
 
     ("relationship"|Created|A|Lovely coffee under the Triumph Arc|A can be seen drinking a coffee in Summer 2024 under the Arc of Triumph with her lover.|80)
     ("relationship"|Created|B|Lovely coffee under the Triumph Arc|B can be seen happily laughing while holding tight A in Summer 2024 under the Arc of Triumph.|80)

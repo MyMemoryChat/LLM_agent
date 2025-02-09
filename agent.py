@@ -142,14 +142,22 @@ class AnswerAgent(ReActAgent):
             response_dict = ast.literal_eval(completion)
             if "images" in response_dict:
                 response_dict["images"] = [ast.literal_eval(img) if isinstance(img, str) else img for img in response_dict["images"]]
-        except (SyntaxError, ValueError):
-            return {"error": "Failed to parse response as dictionary"}
-        
+        except (SyntaxError, ValueError) as e:
+            print("Error: when parsing completion: ", completion, e)
+            return {
+                "message": completion,
+                "images": []
+            }
         for img in response_dict["images"]:
             img_path = img.pop("path")  # Remove the "path" key
-            img["image_file"] = f"data:image/jpeg;base64,{encode_image(img_path)}" 
+            try:
+                img["image_file"] = f"data:image/jpeg;base64,{encode_image(img_path)}"
+            except FileNotFoundError:
+                img= None
 
         return response_dict
+        
+        
         
         
 class PictureAgent(ReActAgent):
@@ -173,7 +181,7 @@ class PictureAgent(ReActAgent):
         
         super().__init__(model, tools, system)
         
-    def __call__(self, image_path: str, description: str = None, verbose=False):
+    def __call__(self, image_path: str, description: str = None, verbose: bool =False):
         image = Image.open(image_path)
         
         return super().__call__(message=[image_path, image, description], verbose=verbose)
