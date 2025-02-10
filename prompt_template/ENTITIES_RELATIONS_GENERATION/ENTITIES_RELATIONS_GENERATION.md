@@ -63,7 +63,7 @@
     Observation: I see that there is a corresponding entity A and that it is connected to B like in the text prompt.
     Thought: I don't have to update the entity A, since no new personal data was found in the text, but I can update its relationship with B and strengthen the relation because of the recent positive and important event.
     Action: update_neo4j_graph
-    ("relationship"|A|Updated|B|A is dating B. They met in a coffee shop in Y at xx:xx.|85)
+    ("relationship"|Updated|A|B|A is dating B. They met in a coffee shop in Y at xx:xx.|85)
     PAUSE
 
     (You will be called again with the output of the function.)

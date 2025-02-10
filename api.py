@@ -41,7 +41,7 @@ def receive_data():
         
     return jsonify({
         "message": message,
-        "answer": agents[0](message=text)
+        "answer": agents[0](message=text, verbose=True)
     })
 
 if __name__ == "__main__":

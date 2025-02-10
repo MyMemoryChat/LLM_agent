@@ -60,7 +60,7 @@ class ReActAgent:
                     try:
                         self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
                     except Exception as e:
-                        print("Error:",entity_name)
+                        print(f"Error ({e}):",entity_name)
                         self.messages.pop()
                     break
                 

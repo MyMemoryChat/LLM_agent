@@ -45,7 +45,7 @@ def update_neo4j_graph(knowledge: str) -> str:
             elif element["action_type"] == "Created":
                 query_neo4j_graph(f"CREATE (n:{':'.join(['__Entity__',element['type']])} {{name: $name, description: $description}})", params=element)
             else:
-                return "Invalid action type: either Created or Updated."
+                return "Invalid action type: either Created, Updated or Deleted needs to be put in second position entity|<action_type>|..."
         elif "relationship" in element:
             element = {
                 "action_type": element.split("|")[1],
@@ -65,7 +65,7 @@ def update_neo4j_graph(knowledge: str) -> str:
             elif element["action_type"] == "Created":
                 query_neo4j_graph(f"MATCH (m:__Entity__), (n) where m.name=$from and n.name=$to CREATE (m)-[:RELATED_TO {{description: $description, strength: $strength}}]->(n)", params=element)
             else:
-                return "Invalid action type: either Created or Updated."
+                return "Invalid action type: either Created, Updated or Deleted needs to be put in second position relationship|<action_type>|..."
         elif "image" in element:
             element = {
                 "action_type": element.split("|")[1],
@@ -85,11 +85,11 @@ def update_neo4j_graph(knowledge: str) -> str:
             elif element["action_type"] == "Created":
                 query_neo4j_graph(f"CREATE (n:__Entity__:Image {{name: $image_title, image_path: $image_path, location: $location, date: $date, description: $description}})", params=element)
             else:
-                return "Invalid action type: either Created or Updated."
+                return "Invalid action type: either Created, Updated or Deleted needs to be put in second position image|<action_type>|..."
         elif not element.strip():
             continue
         else:
-            return "Invalid knowledge element: either entity or relationship."
+            return "Invalid knowledge element: either entity, relationship or image."
     
     # Update the embeddings of the entities
     Neo4jVector.from_existing_graph(
