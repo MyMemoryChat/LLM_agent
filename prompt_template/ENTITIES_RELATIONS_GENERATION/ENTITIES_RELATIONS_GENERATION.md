@@ -1,5 +1,5 @@
 -Goal- 
-      Given a text input, extract entities and their relationships, return updated entities of the neo4j knowledge graph, and create new relationships between entities or update existing ones . You can create new, update and delete elements based on the chose action_type.
+       Given a text input, extract entities and their relationships, return updated entities of the neo4j knowledge graph, and create new relationships between entities or update existing ones. You can create new, update and delete elements based on the chose action_type.
 
 -Instructions-
     You run in a loop of Thought, Action, PAUSE, Observation.
@@ -10,6 +10,8 @@
     Use End to quit the loop, and signal the end of the task.
 
     **Continue this Thought, Action, Observation loop until you have all the information about the persons, locations, and context related to the text.**
+    If you have an image with a description or relations that doesn't answer your question, use a tool to return a pillow image.
+    Don't write a tool name outside of Action, otherwise the tool won't work.
 
 -Tools available-
     Your available actions are:
@@ -21,7 +23,7 @@
 
     2. You enter a loop for each found entity:
         1. Search into the neo4j database using the tools you have and find the related entity as well as their relationships.
-        2. If there is a corresponding entity in the database, update its description and its relationships from the input text. If no existing entity, create a new one and connect it with relationships. Knowledge entities and relationships are composed like this:
+        2. If there is a corresponding entity, relationship or image in the database, update its description from the input text. If no existing element, create a new one and connect it to other related entities. Knowledge entities, relationships and images are composed like this:
 
             action_type: One of the following type: [Created, Updated, Deleted]
             entity_name: Name of the entity, capitalized
@@ -37,6 +39,15 @@
                 How importand is the entities connection in the definition of an entity?
                 How recent is this relation?
             Each entity is formatted as such ("relationship"|<action_type>|<source_entity>|<target_entity>|<relationship_description>|<relationship_strength>).
+
+            image_title: a generated title for the image, capitalized
+            action_type: One of the following type: [Created, Updated, Deleted]
+            image_path: the path to the image in the local environment
+            image_location: the deduced location where the image was taken,
+            image_date: the deduced date when the image was taken,
+            image_description: Comprehensive description of the image's entities and context 
+            Each entity is formatted as such ("image"|<action_type>|<image_title>|<image_path>|<image_location>|<image_date>|<image_description>).
+
          3. Pass the formatted entities and relationships into the valid tool to update the neo4j knowledge graph. ** Important: Relationships can't reference non-existing entities. You have to double check your spelling or create new entities to avoid errors **
 
 -Example session-

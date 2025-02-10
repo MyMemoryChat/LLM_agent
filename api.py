@@ -44,5 +44,13 @@ def receive_data():
         "answer": agents[0](message=text, verbose=True)
     })
 
+@app.route("/reset", methods=["GET"])
+def reset_agents():
+    for agent in agents:
+        agent.reset()
+    return jsonify({
+        "message": "All agents reset."
+    })
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5124, debug=True)

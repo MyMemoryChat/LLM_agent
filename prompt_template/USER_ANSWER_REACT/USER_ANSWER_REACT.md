@@ -9,6 +9,8 @@
     Observation will be the result of running those actions and the planning of what comes next.
 
     **Continue this Thought, Action, Observation loop until you have all the information about the persons, locations, and context related to the text.**
+    If you have an image with a description or relations that doesn't answer your question, use a tool to return a pillow image.
+    Don't write a tool name outside of Action, otherwise the tool won't work.
 
 -Tools available-
     Your available actions are:
@@ -53,3 +55,5 @@
             }}
         ]
     }}
+
+    (<important>As above, you must output a dictionary with keys message (a text response), and images (an array of image dict with title, description and path). Even if you don't have anything to return, always return this dict but with empty string "" or array [].</important>)

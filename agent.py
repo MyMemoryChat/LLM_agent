@@ -2,11 +2,10 @@
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.prompts import PromptTemplate
-from tools import update_neo4j_graph, search_neo4j_graph
+from tools import update_neo4j_graph, search_neo4j_graph, load_image, encode_image, replace_emotes
 from PIL import Image
 import time
 import ast
-from tools import encode_image
 
 import os
 from dotenv import load_dotenv
@@ -60,8 +59,8 @@ class ReActAgent:
                     try:
                         self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
                     except Exception as e:
+                        self.messages.append({"role": "user", "parts": f"Error ({e}): {entity_name}"})
                         print(f"Error ({e}):",entity_name)
-                        self.messages.pop()
                     break
                 
         return response
@@ -94,7 +93,7 @@ class UpdateAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a smart and curious database management agent. From a given text, you test the knowledge of a graph database and update it."
         
-        tools = [update_neo4j_graph, search_neo4j_graph]
+        tools = [update_neo4j_graph, search_neo4j_graph, load_image]
         
         instruction_template = PromptTemplate.from_template(open("./prompt_template/ENTITIES_RELATIONS_GENERATION/ENTITIES_RELATIONS_GENERATION.md", "r").read())
         instructions = instruction_template.invoke({"tools": tools}).to_string()
@@ -119,7 +118,7 @@ class AnswerAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a caring, harmless and helpful assistant answering questions about a graph database, helping people remember pasts events and make decisions accordingly."
         
-        tools = [search_neo4j_graph]
+        tools = [search_neo4j_graph, load_image]
         
         instruction_template = PromptTemplate.from_template(open("./prompt_template/USER_ANSWER_REACT/USER_ANSWER_REACT.md", "r").read())
         instructions = instruction_template.invoke({"tools": tools}).to_string()
@@ -146,6 +145,7 @@ class AnswerAgent(ReActAgent):
             pass
         try:
             response_dict = ast.literal_eval(completion)
+            response_dict["message"] = replace_emotes(response_dict["message"])
             if "images" in response_dict and response_dict["images"] is not None and response_dict["images"] != []:
                 response_dict["images"] = [ast.literal_eval(img) if isinstance(img, str) else img for img in response_dict["images"]]
         except (SyntaxError, ValueError) as e:
@@ -170,7 +170,7 @@ class PictureAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a smart and curious database management agent. From a given image with a description, you add the knowledge from it to a knowledge graph."
         
-        tools = [search_neo4j_graph, update_neo4j_graph]
+        tools = [search_neo4j_graph, update_neo4j_graph, load_image]
         
         instruction_template = PromptTemplate.from_template(open("./prompt_template/IMAGE_RECOGNITION/IMAGE_RECOGNITION.md", "r").read())
         instructions = instruction_template.invoke({"tools": tools}).to_string()

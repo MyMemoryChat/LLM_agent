@@ -3,10 +3,14 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 from graphdatascience import GraphDataScience
 from langchain.agents import tool
+
 import base64
+import re
+import emoji
 
 import os
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -16,11 +20,28 @@ def encode_image(image_path):
         return None
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode("utf-8")
+    
+def replace_emotes(text):
+    """Finds (:emote:) patterns and replaces them with actual emojis."""
+    def emote_replacer(match):
+        emote_name = match.group(1)  # Extract emote name inside (:...:)
+        return emoji.emojize(f":{emote_name}:", language="alias")  # Convert to emoji
+    
+    # Replace all matches
+    return re.sub(r":([a-zA-Z0-9_]+):", emote_replacer, text)
 
 def query_neo4j_graph(query, params=None):
     # Load LangChain Neo4jGraph instance 
     graph = Neo4jGraph(url=os.getenv("NEO4J_URI"), username=os.getenv("NEO4J_USERNAME"), password=os.getenv("NEO4J_PASSWORD"))
     return graph.query(query, params)
+
+@tool
+def load_image(image_path: str) -> Image.Image:
+    """Process an image from a given path and return a Pillow Image object. Use it when ask about information on an image and you already have access to its path."""
+    image_path = image_path.strip()
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"No such file: '{image_path}'")
+    return Image.open(image_path)
 
 @tool
 def update_neo4j_graph(knowledge: str) -> str:
