@@ -91,7 +91,7 @@ class ReActAgent:
         return completion.text
     
 class UpdateAgent(ReActAgent):
-     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
+    def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a smart and curious database management agent. From a given text, you test the knowledge of a graph database and update it."
         
         tools = [update_neo4j_graph, search_neo4j_graph]
@@ -109,7 +109,11 @@ class UpdateAgent(ReActAgent):
             )
         )
         
-        super().__init__(model, tools, system)
+        return super().__init__(model, tools, system)
+    
+    def __call__(self, message, verbose=False):
+        message = "Images and knowledges are stored in a graph database. Use tools to update the following knowledge: \n" + message
+        return super().__call__(message, verbose)
         
 class AnswerAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
@@ -133,6 +137,8 @@ class AnswerAgent(ReActAgent):
         super().__init__(model, tools, system)
         
     def __call__(self, message, verbose=False):
+        message = "Images and knowledges are stored in a graph database. Use tools to answer the following question: \n" + message
+        
         completion = super().__call__(message, verbose)
         try:
             completion = completion.split("Answer:")[1].strip()
@@ -140,7 +146,7 @@ class AnswerAgent(ReActAgent):
             pass
         try:
             response_dict = ast.literal_eval(completion)
-            if "images" in response_dict:
+            if "images" in response_dict and response_dict["images"] is not None and response_dict["images"] != []:
                 response_dict["images"] = [ast.literal_eval(img) if isinstance(img, str) else img for img in response_dict["images"]]
         except (SyntaxError, ValueError) as e:
             print("Error: when parsing completion: ", completion, e)
