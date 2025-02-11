@@ -89,13 +89,6 @@ class ReActAgent:
             print("Model:" + completion.text)
         return completion.text
     
-    def reset(self):
-        """
-        Resets the model by clearing the conversation history.
-        """
-        self.messages = []
-        self.model = self.model.__class__(model= self.model, history=self.messages)
-    
 class UpdateAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a smart and curious database management agent. From a given text, you test the knowledge of a graph database and update it."

@@ -46,8 +46,8 @@ def receive_data():
 
 @app.route("/reset", methods=["GET"])
 def reset_agents():
-    for agent in agents:
-        agent.reset()
+    global agents
+    agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
     return jsonify({
         "message": "All agents reset."
     })
