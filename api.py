@@ -15,13 +15,13 @@ agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
 def receive_data():
     text = request.json.get("text")
     image_base64 = request.json.get("image")
+    
     if image_base64 is None:
         print('Image not found in request.json')
         try:
             agents[1](message=text, verbose=True)
-            message = "New knowledge added to the database."
         except Exception as e:
-            message = f"Failed to add new knowledge: {e}"
+            print(f"Failed to process text: {e}")
     else:
         print('Image found in request.json')
         try:
@@ -29,20 +29,20 @@ def receive_data():
             while os.path.exists(f"{image_folder}/image{i}.jpg"):
                 i+=1
             image_path = f"{image_folder}/image{i}.jpg"
-            
+
             image_base64 = re.sub(r"^data:image/\w+;base64,", "", image_base64)
             image_data = base64.b64decode(image_base64)
             with open(image_path, "wb") as img_file:
                 img_file.write(image_data)
             agents[2](image_path=image_path, description=text, verbose=True)
-            message = "Image saved and added to the database."
         except Exception as e:
-            message = f"Failed to save image: {e}"
-        
-    return jsonify({
-        "message": message,
-        "answer": agents[0](message=text, verbose=True)
-    })
+            print(f"Failed to process image: {e}")
+             
+    try:
+        answer = agents[0](message=text, verbose=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(answer)
 
 @app.route("/reset", methods=["GET"])
 def reset_agents():

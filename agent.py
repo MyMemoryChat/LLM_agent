@@ -89,6 +89,13 @@ class ReActAgent:
             print("Model:" + completion.text)
         return completion.text
     
+    def reset(self):
+        """
+        Resets the model by clearing the conversation history.
+        """
+        self.messages = []
+        self.model = self.model.__class__(model= self.model, history=self.messages)
+    
 class UpdateAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
         system="You are a smart and curious database management agent. From a given text, you test the knowledge of a graph database and update it."
@@ -149,11 +156,7 @@ class AnswerAgent(ReActAgent):
             if "images" in response_dict and response_dict["images"] is not None and response_dict["images"] != []:
                 response_dict["images"] = [ast.literal_eval(img) if isinstance(img, str) else img for img in response_dict["images"]]
         except (SyntaxError, ValueError) as e:
-            print("Error: when parsing completion: ", completion, e)
-            return {
-                "message": completion,
-                "images": []
-            }
+            raise Exception(f"Error when parsing completion: {e};\n", completion)
         for img in response_dict["images"]:
             img_path = img.pop("path")  # Remove the "path" key
             try:
