@@ -27,7 +27,7 @@
 
             action_type: One of the following type: [Created, Updated, Deleted]
             entity_name: Name of the entity, capitalized
-            entity_type: One of the following types: [Person, Location, Event, Object, Pet] (Don't create new categories, if you don't know select object)
+            entity_type: One of the following types: [Person, Location, Event, Date, Object, Pet] (Don't create new categories, if you don't know select object)
             entity_description: Comprehensive description of the entity's attributes and activities 
             Each entity is formatted as such ("entity"|<action_type>|<entity_name>|<entity_type>|<entity_description>)
 

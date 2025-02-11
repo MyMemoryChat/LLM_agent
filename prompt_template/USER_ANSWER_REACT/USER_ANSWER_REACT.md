@@ -46,7 +46,7 @@
 
     Answer: 
     {{
-        'message': B brought A to Y for her 26th birthday from Turkey. That is really lovely and romantic :blush: !,
+        'message': B brought A to Y for her 26th birthday from Turkey. That is really lovely and romantic 😊!,
         'images': [
             {{
                 'title': 'A and B in the plane to Paris',
