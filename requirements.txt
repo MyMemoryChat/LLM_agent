@@ -9,3 +9,4 @@ pillow
 flask
 flask-cors
 emoji
+waitress
