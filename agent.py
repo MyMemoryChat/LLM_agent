@@ -53,15 +53,16 @@ class ReActAgent:
             self.messages.append({"role": "model", "parts": response})
             if not response.strip().endswith("PAUSE") or response.strip().endswith("End"):
                 break
+            response = response.split("Action:")[1].split("PAUSE")[0]
             for tool in self.tools:
                 if tool.name in response:
                     entity_name = response.split(tool.name)[1].split("PAUSE")[0]
-                    try:
-                        self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
-                    except Exception as e:
+                    self.messages.append({"role": "user", "parts": tool.invoke(entity_name)})
+                    """except Exception as e:
                         self.messages.append({"role": "user", "parts": f"Error ({e}): {entity_name}"})
-                        print(f"Error ({e}):",entity_name)
-                    break
+                        if not verbose:
+                            print(f"Error ({e}):",entity_name)
+                    break"""
                 
         return response
     
