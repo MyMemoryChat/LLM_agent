@@ -6,7 +6,14 @@ import base64
 import re
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {
+    "origins": ["http://192.168.2.34:4173", "http://localhost:4173"]
+}})
+
+@app.after_request
+def after_request(response):
+    print(f"Request from: {request.origin}")
+    return response
 
 image_folder = "./images"
 agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
