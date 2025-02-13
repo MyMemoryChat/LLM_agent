@@ -63,7 +63,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                 elif element["operation_type"] == "Updated":
                     query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species SET n.date_of_birth=$date_of_birth, n.additional_infos=$additional_infos", params=element)
                 
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species RETURN n.date_of_birth=$date_of_birth, n.additional_infos=$additional_infos", params=element)) != []:
+                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species RETURN n.date_of_birth as date_of_birth, n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
                     for key in ["date_of_birth", "additional_infos"]:
                         if key in result[0] and result[0][key] is not None:
@@ -92,7 +92,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                 elif element["operation_type"] == "Updated":
                     query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name SET n.city=$city, n.country=$country, n.continent=$continent, n.additional_infos=$additional_infos", params=element)
                 
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name RETURN n.city=$city, n.country=$country, n.continent=$continent,  n.additional_infos=$additional_infos", params=element)) != []:
+                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name RETURN n.city as city, n.country as country, n.continent as continent,  n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
                     for key in ["city", "country", "continent", "additional_infos"]:
                         if key in result[0] and result[0][key] is not None:
@@ -119,7 +119,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                 elif element["operation_type"] == "Updated":
                     query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date SET n.additional_infos=$additional_infos", params=element)
                 
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date RETURN n.additional_infos=$additional_infos", params=element)) != []:
+                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date RETURN n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
                     for key in ["additional_infos"]:
                         if key in result[0] and result[0][key] is not None:
@@ -146,7 +146,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                 elif element["operation_type"] == "Updated":
                     query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name SET n.type=$type, n.additional_infos=$additional_infos", params=element)
                 
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name RETURN n.type=$type,  n.additional_infos=$additional_infos", params=element)) != []:
+                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name RETURN n.type as type,  n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
                     for key in ["type", "additional_infos"]:
                         if key in result[0] and result[0][key] is not None:
@@ -165,24 +165,25 @@ def update_neo4j_graph(knowledge: str) -> str:
                     "operation_type": element.split("|")[2],
                     "name": element.split("|")[3],
                     "date": element.split("|")[4],
-                    "additional_infos": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
+                    "path": element.split("|")[5],
+                    "additional_infos": element.split("|")[6][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
                 }
                 if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image') where n.name=$name DETACH DELETE n", params=element)
+                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name DETACH DELETE n", params=element)
                 
                 elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image') where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
+                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
                 
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Image') where n.name=$name RETURN n.date=$date,  n.additional_infos=$additional_infos", params=element)) != []:
+                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name RETURN n.date as date,  n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
                     for key in ["date", "additional_infos"]:
                         if key in result[0] and result[0][key] is not None:
                             element[key] = result[0][key]
                     
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image') where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
+                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
                 
                 elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Image' {name: $name, date:$date, additional_infos: $additional_infos})", params=element)
+                    query_neo4j_graph("CREATE (n:`__Entity__`:`Image` {name: $name, date:$date, additional_infos: $additional_infos})", params=element)
                 
                 else:
                     return f"Invalid operation type for image '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
@@ -190,7 +191,6 @@ def update_neo4j_graph(knowledge: str) -> str:
             else:
                 return f"Invalid entity type: either livingbeing, location, event, object or image needs to be put in second position entity|<entity_type>|<operation_type>|..."
         elif "relationship" in element:
-            print(element)
             element = {
                 "relation_type": element.split("|")[1],
                 "operation_type": element.split("|")[2],
@@ -198,7 +198,6 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "to": element.split("|")[4],
                 "description": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
-            print(element)
             if element["relation_type"] not in ['CUSTOM','WENT_TO','LIVE_IN','BORN_IN','LIKE','DISLIKE','BELONG_TO','TOOK_PLACE_IN','REPRESENT','PARTICIPATED_IN','FAMILY','COUPLE','FRIEND','ACQUAINTANCE']:
                 return f"Invalid relation type {element['relation_type']}: either LIVE_IN, BORN_IN, LIKE, DISLIKE, BELONG_TO, TOOK_PLACE_IN, REPRESENT, PARTICIPATED_IN, FAMILY, COUPLE, FRIEND or ACQUAINTANCE needs to be put in second position relationship|<relation_type>|<operation_type>|..."
                             
@@ -208,7 +207,9 @@ def update_neo4j_graph(knowledge: str) -> str:
                 query_neo4j_graph(f"MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description", params=element)
             elif (result := query_neo4j_graph("MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to RETURN r.description as description", params=element)) != []:
                 # Additional check because LLM not perfect and might create multiple times same element
-                element["description"] = result[0]["description"] + " " + element["description"]
+                for key in ["description"]:
+                        if key in result[0] and result[0][key] is not None:
+                            element[key] = result[0][key]
                 query_neo4j_graph(f"MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description", params=element)
             elif element["operation_type"] == "Created":
                 query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
@@ -221,41 +222,9 @@ def update_neo4j_graph(knowledge: str) -> str:
     Neo4jVector.from_existing_graph(
         embedding=OpenAIEmbeddings(),
         node_label='__Entity__',
-        text_node_properties=['*'],
+        text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type'],
         embedding_node_property='embedding'
     )
-    
-    # Update Communities cluster
-    query_neo4j_graph("Match (n:__Entity__) REMOVE n.community")
-    query_neo4j_graph("Match (n:Community) DETACH DELETE n")
-    
-    # Connect GDS
-    gds = GraphDataScience(
-        os.environ["NEO4J_URI"],
-        auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
-    )
-    
-    if gds.graph.exists("communities").exists:
-        gds.graph.drop("communities")
-    
-    G, result = gds.graph.project(
-        "communities",
-        ["__Entity__"],
-        "*",
-        nodeProperties=["embedding"]
-    )
-    
-    result = gds.louvain.write(G, writeProperty="community")
-    
-    query_neo4j_graph("""
-            MATCH (e:__Entity__)
-            WITH DISTINCT e.community AS cluster_id
-            MERGE (c:Community {id: cluster_id});
-            """)
-    query_neo4j_graph("""
-            MATCH (e:__Entity__), (c:Community {id: e.community})
-            MERGE (e)-[:BELONGS_TO]->(c);
-        """)
     
     return "Successfully updated the Neo4j graph."
 
@@ -309,31 +278,49 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             similarity
             WHERE s:Query and t:__Entity__
             RETURN t.name AS entityName,
-            labels(t) AS entityType,
-            t.description AS entityDescription,
-            t.location AS imageLocation,
-            t.date AS imageDate,
-            t.image_path AS imagePath
+            labels(t) AS entityLabel,
+            t.additional_infos AS entityAdditional_infos,
+            t.location AS entityLocation,
+            t.date AS entityDate,
+            t.image_path AS imagePath,
+            t.species as entitySpecies,
+            t.date_of_birth AS entityBirthday,
+            t.city as entityCity,
+            t.country as entityCountry,
+            t.continent as entityContinent,
+            t.type as entityType
             LIMIT 3
         """
     )
     
     query_neo4j_graph("MATCH (q:Query) DELETE q")
         
-    top_3["entityType"] = top_3["entityType"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
+    top_3["entityLabel"] = top_3["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
     
-    query_neo4j_graph("MATCH (q:Query) DELETE q")
+    format_mapping = {
+        "LivingBeing": "(entity|livingbeing|None|{entityName}|{entitySpecies}|{entityBirthday}|{entityAdditional_infos})",
+        "Location": "(entity|location|None|{entityName}|{entityCity}|{entityCountry}|{entityContinent}|{entityAdditional_infos})",
+        "Event": "(entity|event|None|{entityName}|{entityDate}|{entityAdditional_infos})",
+        "Object": "(entity|object|None|{entityName}|{entityType}|{entityAdditional_infos})",
+        "Image": "(entity|image|None|{entityName}|{entityDate}|{imagePath}|{entityAdditional_infos})"
+    }
+
     result = "\n"
     for _, row in top_3.iterrows():
-        if row["entityType"] == 'Image':
-            result += f'("image"|{row["entityName"]}|{row["imagePath"]}|{row["imageLocation"]}|{row["imageDate"]}|{row["entityDescription"]})\n'
+        entity_label = row["entityLabel"]
+        if entity_label in format_mapping:
+            result += format_mapping[entity_label].format(**row) + "\n"
         else:
-            result += f'("entity"|{row["entityName"]}|{row["entityType"]}|{row["entityDescription"]})\n'
-        
+            print(entity_label)
+            result += f"(entity|{entity_label}|None|{row['entityName']}|{row['entityAdditional_infos']})\n"
+    
     result += "\n"
     for idx, row in top_3.iterrows():
-        relations = query_neo4j_graph(f"MATCH (m)-[r]->(n) WHERE m.name=$entityName RETURN m.name as from, n.name as to, r.description as description, r.strength as strength", params=row.to_dict())
+        relations = query_neo4j_graph(
+            "MATCH (m)-[r]-(n) WHERE m.name=$entityName RETURN type(r) as relationType, m.name as from, n.name as to, r.description as description",
+            params=row.to_dict()
+        )
         for relation in relations:
-            result += f'("relationship"|{relation["from"]}|{relation["to"]}|{relation["description"]}|{relation["strength"]})\n'
+            result += f"(relationship|{relation['relationType']}|None|{relation['from']}|{relation['to']}|{relation['description']})\n"
             
     return result if result.strip() else "No results found."

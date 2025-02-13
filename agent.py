@@ -111,9 +111,15 @@ class UpdateAgent(ReActAgent):
         
         return super().__init__(model, tools, system)
     
-    def __call__(self, message, verbose=False):
+    def __call__(self, message: str, image_path: str = None, verbose=False):
         message = "Images and knowledges are stored in a graph database. Use tools to update the following knowledge: \n" + message
-        return super().__call__(message, verbose)
+        
+        if image_path is not None:
+            image = Image.open(image_path)
+        else:
+            image = None
+        
+        return super().__call__(message=[image_path, image, message], verbose=verbose)
         
 class AnswerAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):

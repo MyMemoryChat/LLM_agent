@@ -57,11 +57,12 @@
     - Image:
         - name: a title for the image,
         - date: the date of the image, if specified: DD-MM-YYYY,
+        - image_path: the given path where the image is saved locally,
         - additional_infos: a description of the image.
         When updating, format it as such: 
-            (entity|"image"|<operation_type>|<name>|<date>|<additional_infos>)
+            (entity|"image"|<operation_type>|<name>|<date>|<image_path>|<additional_infos>)
         Example: 
-            (entity|"image"|Created|The house of John|19-01-2025|Picture of the house of John before it got destroyed.)
+            (entity|"image"|Created|The house of John|19-01-2025|./images/image0.jpg|Picture of the house of John before it got destroyed.)
 
 -Relations available-
     Relations are entity types specific, they depend on the type of entity, they go from and to. They carry semantic.
@@ -163,17 +164,10 @@
     Thought: I don't have to update the entity A, since no new personal data was found in the text, but I can update its relationship with B. Additionally, I need to delete the obsolete elements.
     Action: update_neo4j_graph
     (relationship|COUPLE|Updated|A|B|A is dating B since 11-12-2023. This summer 2024 they went to Y on a trip.)
-    PAUSE
-    (You need to pass one element at a time.)
-
-    (You will be called again with the output of the function.)
-    User: Successfully updated the knowledge graph
-    Observation: The updated COUPLE relation between A and B was successfully updated.
-    Thought: Now that the COUPLE relation has been updated, I need to delete the obsolete LIVE_IN relation between A and Cairo.
-    Action: update_neo4j_graph
     (relationship|LIVE_IN|Deleted|A|Cairo|A lives in Cairo to study her Bachelor in Biology)
     PAUSE
 
+    (You will be called again with the output of the function.)
     User: Successfully updated the knowledge graph
     (Repeats for every entity found at first. etc...)
 

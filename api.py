@@ -16,21 +16,13 @@ def after_request(response):
     return response
 
 image_folder = "./images"
-agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
+agents = [AnswerAgent(), UpdateAgent()]
 
 @app.route("/", methods=["POST"])
 def receive_data():
     text = request.json.get("text")
     image_base64 = request.json.get("image")
-    
-    if image_base64 is None:
-        print('Image not found in request.json')
-        try:
-            agents[1](message=text, verbose=True)
-        except Exception as e:
-            print(f"Failed to process text: {e}")
-    else:
-        print('Image found in request.json')
+    if image_base64 is not None:
         try:
             i=0
             while os.path.exists(f"{image_folder}/image{i}.jpg"):
@@ -41,10 +33,12 @@ def receive_data():
             image_data = base64.b64decode(image_base64)
             with open(image_path, "wb") as img_file:
                 img_file.write(image_data)
-            agents[2](image_path=image_path, description=text, verbose=True)
         except Exception as e:
             print(f"Failed to process image: {e}")
-             
+    else:
+        image_path = None
+    agents[1](message=text, image_path=image_path, verbose=True)
+    
     try:
         answer = agents[0](message=text, verbose=True)
     except Exception as e:
@@ -54,7 +48,7 @@ def receive_data():
 @app.route("/reset", methods=["GET"])
 def reset_agents():
     global agents
-    agents = [AnswerAgent(), UpdateAgent(), PictureAgent()]
+    agents = [AnswerAgent(), UpdateAgent()]
     return jsonify({
         "message": "All agents reset."
     })
