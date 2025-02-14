@@ -1,3 +1,3 @@
-from tools import update_neo4j_graph, search_neo4j_graph
+from tools import similar_node_merging_neo4j
 
-update_neo4j_graph.invoke("")
+similar_node_merging_neo4j()

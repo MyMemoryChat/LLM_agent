@@ -3,6 +3,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 from graphdatascience import GraphDataScience
 from langchain.agents import tool
+import pandas as pd
 
 import base64
 import re
@@ -172,7 +173,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                     query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name DETACH DELETE n", params=element)
                 
                 elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
+                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.image_path=$path, n.additional_infos=$additional_infos", params=element)
                 
                 elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name RETURN n.date as date,  n.additional_infos as additional_infos", params=element)) != []:
                     # Additional check because LLM not perfect and might create multiple times same element
@@ -180,10 +181,10 @@ def update_neo4j_graph(knowledge: str) -> str:
                         if key in result[0] and result[0][key] is not None:
                             element[key] = result[0][key]
                     
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.additional_infos=$additional_infos", params=element)
+                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.image_path=$path, n.additional_infos=$additional_infos", params=element)
                 
                 elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Image` {name: $name, date:$date, additional_infos: $additional_infos})", params=element)
+                    query_neo4j_graph("CREATE (n:`__Entity__`:`Image` {name: $name, date:$date, image_path:$path, additional_infos: $additional_infos})", params=element)
                 
                 else:
                     return f"Invalid operation type for image '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
@@ -191,6 +192,8 @@ def update_neo4j_graph(knowledge: str) -> str:
             else:
                 return f"Invalid entity type: either livingbeing, location, event, object or image needs to be put in second position entity|<entity_type>|<operation_type>|..."
         elif "relationship" in element:
+            if len(element.split("|"))!=6:
+                return f"Invalid format {element}: relationships should follow the following format: (relationship|<relation_type>|<operation_type>|<from>|<to>|<description>)"
             element = {
                 "relation_type": element.split("|")[1],
                 "operation_type": element.split("|")[2],
@@ -198,7 +201,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                 "to": element.split("|")[4],
                 "description": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
             }
-            if element["relation_type"] not in ['CUSTOM','WENT_TO','LIVE_IN','BORN_IN','LIKE','DISLIKE','BELONG_TO','TOOK_PLACE_IN','REPRESENT','PARTICIPATED_IN','FAMILY','COUPLE','FRIEND','ACQUAINTANCE']:
+            if element["relation_type"] not in ['CUSTOM','SEEN_IN','WENT_TO','LIVE_IN','BORN_IN','LIKE','DISLIKE','BELONG_TO','TOOK_PLACE_IN','REPRESENT','PARTICIPATED_IN','FAMILY','COUPLE','FRIEND','ACQUAINTANCE']:
                 return f"Invalid relation type {element['relation_type']}: either LIVE_IN, BORN_IN, LIKE, DISLIKE, BELONG_TO, TOOK_PLACE_IN, REPRESENT, PARTICIPATED_IN, FAMILY, COUPLE, FRIEND or ACQUAINTANCE needs to be put in second position relationship|<relation_type>|<operation_type>|..."
                             
             if element["operation_type"] == "Deleted":
@@ -222,28 +225,27 @@ def update_neo4j_graph(knowledge: str) -> str:
     Neo4jVector.from_existing_graph(
         embedding=OpenAIEmbeddings(),
         node_label='__Entity__',
-        text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type'],
+        text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
         embedding_node_property='embedding'
     )
     
     return "Successfully updated the Neo4j graph."
 
 @tool
-def search_neo4j_graph(question: str, filter = "") -> str:
+def search_neo4j_graph(question: str, topk: int = 5) -> str:
     """
-    Returns the 3 nearest neighbours of a query embedding as well as their relations in the Neo4j graph.
+    Returns the 5 nearest neighbours of a query embedding as well as their relations in the Neo4j graph.
     Args:
         question (str): The query string to search for in the Neo4j graph.
-        filter (str): The filter string to search for in the Neo4j graph, can be __Chunk__ or __Entity__. Default is "".
     Returns:
         str: A formatted string containing the top 5 nearest neighbours' names, descriptions, and similarity scores.
     Example:
         >>> search_neo4j_graph Who is John?
-        'Entity Name: John Doe\nEntity Description: A person named John Doe\nSimilarity: 0.95\n\n...'
+        '(entity|livingbeing|None|John|Human|None|None)'
         >>> search_neo4j_graph Why did the family go to Brussels?
-        'Entity Name: Family trip to Brussels\nEntity Description: Uncle invited all the family for Christmas \nSimilarity: 0.80\n\n...'
+        '(entity|event|None|Family trip to Brussels|2022-07-15|None)'
         >>> search_neo4j_graph What happened in 1945?
-        'Entity Name: May 1945\nEntity Description: The end of World War II in Europe \nSimilarity: 0.60\n\n...'
+        '(entity|event|None|End of World War II|1945-05-08|None)'
     """
     # Delete nodes without embeddings for potential errors
     query_neo4j_graph("""
@@ -269,9 +271,9 @@ def search_neo4j_graph(question: str, filter = "") -> str:
         nodeProperties=["embedding"]
     )
 
-    top_3 = gds.run_cypher(
-        """
-            CALL gds.knn.stream("entities&query", {nodeProperties:"embedding", topk:3})
+    top_5 = gds.run_cypher(
+        f"""
+            CALL gds.knn.stream("entities&query", {{nodeProperties:"embedding", topk:2}})
             YIELD node1, node2, similarity
             WITH gds.util.asNode(node1) AS s, 
             gds.util.asNode(node2) AS t,
@@ -289,24 +291,24 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             t.country as entityCountry,
             t.continent as entityContinent,
             t.type as entityType
-            LIMIT 3
+            LIMIT {topk}
         """
     )
     
     query_neo4j_graph("MATCH (q:Query) DELETE q")
         
-    top_3["entityLabel"] = top_3["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
+    top_5["entityLabel"] = top_5["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
     
     format_mapping = {
-        "LivingBeing": "(entity|livingbeing|None|{entityName}|{entitySpecies}|{entityBirthday}|{entityAdditional_infos})",
-        "Location": "(entity|location|None|{entityName}|{entityCity}|{entityCountry}|{entityContinent}|{entityAdditional_infos})",
-        "Event": "(entity|event|None|{entityName}|{entityDate}|{entityAdditional_infos})",
-        "Object": "(entity|object|None|{entityName}|{entityType}|{entityAdditional_infos})",
-        "Image": "(entity|image|None|{entityName}|{entityDate}|{imagePath}|{entityAdditional_infos})"
+        "LivingBeing": "(entity|livingbeing||{entityName}|{entitySpecies}|{entityBirthday}|{entityAdditional_infos})",
+        "Location": "(entity|location||{entityName}|{entityCity}|{entityCountry}|{entityContinent}|{entityAdditional_infos})",
+        "Event": "(entity|event||{entityName}|{entityDate}|{entityAdditional_infos})",
+        "Object": "(entity|object||{entityName}|{entityType}|{entityAdditional_infos})",
+        "Image": "(entity|image||{entityName}|{entityDate}|{imagePath}|{entityAdditional_infos})"
     }
 
     result = "\n"
-    for _, row in top_3.iterrows():
+    for _, row in top_5.iterrows():
         entity_label = row["entityLabel"]
         if entity_label in format_mapping:
             result += format_mapping[entity_label].format(**row) + "\n"
@@ -315,7 +317,7 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             result += f"(entity|{entity_label}|None|{row['entityName']}|{row['entityAdditional_infos']})\n"
     
     result += "\n"
-    for idx, row in top_3.iterrows():
+    for _, row in top_5.iterrows():
         relations = query_neo4j_graph(
             "MATCH (m)-[r]-(n) WHERE m.name=$entityName RETURN type(r) as relationType, m.name as from, n.name as to, r.description as description",
             params=row.to_dict()
@@ -324,3 +326,55 @@ def search_neo4j_graph(question: str, filter = "") -> str:
             result += f"(relationship|{relation['relationType']}|None|{relation['from']}|{relation['to']}|{relation['description']})\n"
             
     return result if result.strip() else "No results found."
+
+@tool
+def find_image(name: str) -> str:
+    """Searches for an image name in the Neo4j graph and returns the image name, date, image_path and additional informations in the right format."""
+    # Delete nodes without embeddings for potential errors
+    query_neo4j_graph("""
+        MATCH (n:__Entity__) 
+        WHERE n.embedding is null
+        detach delete n""")
+    openai_embedding = OpenAIEmbeddings()
+    gds = GraphDataScience(
+        os.environ["NEO4J_URI"],
+        auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
+    )
+    
+    name_embedded = openai_embedding.embed_query(name)
+    query_neo4j_graph("""CREATE (:Query {name: $name, embedding: $name_embedded})""", params={"name":name, "name_embedded": name_embedded})
+    
+    if gds.graph.exists("entities&query").exists:
+        gds.graph.drop("entities&query")
+    
+    gds.graph.project(
+        "entities&query",
+        ["Image", 'Query'],
+        "*",
+        nodeProperties=["embedding"]
+    )
+    
+    image_search = gds.run_cypher(
+        f"""
+            CALL gds.knn.stream("entities&query", {{nodeProperties:"embedding", topk:1}})
+            YIELD node1, node2, similarity
+            WITH gds.util.asNode(node1) AS s, 
+            gds.util.asNode(node2) AS t,
+            similarity
+            WHERE s:Query and t:Image
+            RETURN t.name AS name,
+            t.date AS date,
+            t.image_path AS image_path,
+            t.additional_infos AS additional_infos
+            LIMIT 1
+        """
+    )
+    
+    query_neo4j_graph("MATCH (q:Query) DELETE q")
+    
+    if image_search.empty:
+        return "No image found."
+    
+    image_infos = image_search.iloc[0].to_dict()
+
+    return f"(entity|image|None|{image_infos['name']}|{image_infos['date']}|{image_infos['image_path']}|{image_infos['additional_infos']})\n"
