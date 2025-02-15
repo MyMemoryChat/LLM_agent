@@ -36,6 +36,100 @@ def query_neo4j_graph(query, params=None):
     graph = Neo4jGraph(url=os.getenv("NEO4J_URI"), username=os.getenv("NEO4J_USERNAME"), password=os.getenv("NEO4J_PASSWORD"))
     return graph.query(query, params)
 
+def similar_entities() -> list[str]:
+    # Delete nodes without embeddings for potential errors
+    query_neo4j_graph("""
+        MATCH (n:__Entity__) 
+        WHERE n.embedding is null
+        detach delete n""")
+    gds = GraphDataScience(
+        "bolt://localhost:7687",
+        auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
+    )
+    
+    if gds.graph.exists("synonyms").exists:
+        gds.graph.drop("synonyms")
+    
+    gds.graph.project(
+        "synonyms",
+        ["LivingBeing", "Location", "Event", "Object"],
+        "*",
+        nodeProperties=["embedding"]
+    )
+
+    synonyms = gds.run_cypher(
+        f"""
+            CALL gds.knn.stream("synonyms", {{nodeProperties: "embedding", topk: 2}})
+            YIELD node1, node2, similarity
+            WHERE similarity > 0.95
+            WITH gds.util.asNode(node1) AS n1, 
+                gds.util.asNode(node2) AS n2,
+                similarity
+            WHERE labels(n1) = labels(n2)
+            RETURN labels(n1) AS entityLabel,
+                n1 {{ .*, embedding: NULL }} AS entity1, 
+                n2 {{ .*, embedding: NULL }} AS entity2,
+                similarity
+            ORDER BY similarity DESC
+        """
+    )
+    
+    synonyms = synonyms.drop_duplicates(subset=["similarity"]).drop(labels="similarity", axis=1).reset_index(drop=True)
+    synonyms["entityLabel"] = synonyms["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
+    
+    
+    format_mapping = {
+        "LivingBeing": "(entity|livingbeing||{name}|{species}|{date_of_birth}|{additional_infos})",
+        "Location": "(entity|location||{name}|{city}|{country}|{continent}|{additional_infos})",
+        "Event": "(entity|event||{name}|{date}|{additional_infos})",
+        "Object": "(entity|object||{name}|{type}|{additional_infos})"
+    }
+    
+    result = []
+    for _, row in synonyms.iterrows():
+        entityLabel = row["entityLabel"]
+        if entityLabel in format_mapping:
+            result.append([format_mapping[entityLabel].format(**row['entity1']), format_mapping[entityLabel].format(**row['entity2'])])
+        else:
+            print("Wrong entityLabel found during synonyms search: ",entityLabel)
+            result.append([f"(entity|{entityLabel}|None|{row['entity1'].get('name')}|{row['entity1'].get('additional_infos', 'None')})", f"(entity|{entityLabel}|None|{row['entity2'].get('name')}|{row['entity2'].get('additional_infos', 'None')})"])
+    
+    # Merge of common entities lists
+    # Step 1: Convert list of lists into a list of sets
+    sets = [set(pair) for pair in result]
+
+    # Step 2: Merge sets that have common elements
+    merged = []
+    while sets:
+        first, *rest = sets
+        merged_set = first
+
+        # Try merging sets with common elements
+        changed = True
+        while changed:
+            changed = False
+            new_rest = []
+            for s in rest:
+                if merged_set & s:  # If there is a common element
+                    merged_set |= s  # Merge sets
+                    changed = True
+                else:
+                    new_rest.append(s)
+            rest = new_rest
+
+        merged.append(merged_set)
+        sets = rest  # Continue with remaining sets
+
+    # Step 3: Convert back to list of lists
+    result = [list(group) for group in merged]
+
+    # Output merged lists
+    for group in result:
+        print(group)
+    
+    return result
+    
+
 @tool
 def load_image(image_path: str) -> Image.Image:
     """Process an image from a given path and return a Pillow Image object. Use it when ask about information on an image and you already have access to its path."""

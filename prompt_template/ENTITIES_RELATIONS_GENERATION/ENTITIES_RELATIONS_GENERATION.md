@@ -144,6 +144,7 @@
     - Always wait for the user to call you again after generating a PAUSE!
     - Add as much as possible informations in the additional_infos and make them all different from each other toavoid strong similarities. For that you can use your own knowledge of locations or objects.
     - If there is no picture and image_path provided, don't create an image entity.
+    - When using the update neo4j graph tool, you must use '\n' between every (entity).
 
 -Example session-
 

@@ -2,7 +2,7 @@
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.prompts import PromptTemplate
-from tools import update_neo4j_graph, search_neo4j_graph, load_image, encode_image, replace_emotes, find_image
+from tools import update_neo4j_graph, search_neo4j_graph, load_image, similar_entities, replace_emotes, find_image
 from PIL import Image
 import time
 import ast
@@ -10,6 +10,22 @@ import ast
 import os
 from dotenv import load_dotenv
 load_dotenv()
+
+class SimpleAgent:
+    def __init__(self):
+        genai.configure(api_key="GEMINI_API_KEY")
+        self.model = genai.GenerativeModel(model_name=os.environ.get("DEFAULT_AI_GEMINI_MODEL"))
+        
+        
+    def __call__(self, message, system_instruction=""):
+        response = self.model.generate_content(
+            contents=[system_instruction, message] if system_instruction else [message],
+        )
+        return response.text
+    
+class OptimizerAgent(SimpleAgent):
+    def __call__(self):        
+        return super().__call__(message = similar_entities(), system_instruction=open("./prompt_template/GRAPH_OPTIMIZATION/GRAPH_OPTIMIZATION.md", "r").read())
 
 class ReActAgent:
     """

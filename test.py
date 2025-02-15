@@ -1,3 +1,3 @@
-from tools import similar_node_merging_neo4j
+from tools import similar_entities
 
-similar_node_merging_neo4j()
+similar_entities()
