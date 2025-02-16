@@ -13,19 +13,21 @@ load_dotenv()
 
 class SimpleAgent:
     def __init__(self):
-        genai.configure(api_key="GEMINI_API_KEY")
+        genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
         self.model = genai.GenerativeModel(model_name=os.environ.get("DEFAULT_AI_GEMINI_MODEL"))
         
         
-    def __call__(self, message, system_instruction=""):
+    def __call__(self, message):
         response = self.model.generate_content(
-            contents=[system_instruction, message] if system_instruction else [message],
+            contents=message,
         )
         return response.text
     
 class OptimizerAgent(SimpleAgent):
-    def __call__(self):        
-        return super().__call__(message = similar_entities(), system_instruction=open("./prompt_template/GRAPH_OPTIMIZATION/GRAPH_OPTIMIZATION.md", "r").read())
+    def __call__(self, message: str):
+        message_template = PromptTemplate.from_template(open("./prompt_template/GRAPH_OPTIMIZATION/GRAPH_OPTIMIZATION.md", "r").read())
+        message = message_template.invoke({"input": message}).to_string()
+        return super().__call__(message = message)
 
 class ReActAgent:
     """

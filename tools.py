@@ -14,6 +14,30 @@ from dotenv import load_dotenv
 from PIL import Image
 
 load_dotenv()
+global format_mapping
+format_mapping = {
+        "LivingBeing": "(entity|livingbeing||{name}|{species}|{date_of_birth}|{additional_infos})",
+        "Location": "(entity|location||{name}|{city}|{country}|{continent}|{additional_infos})",
+        "Event": "(entity|event||{name}|{date}|{additional_infos})",
+        "Object": "(entity|object||{name}|{type}|{additional_infos})",
+        "Image": "(entity|image||{name}|{date}|{image_path}|{additional_infos})",
+        "relationship": "(relationship||{relation_type}|{from}|{to}|{description})"
+}
+
+def format_conversion(element: dict[str], type_element: str) -> str:
+    return format_mapping[type_element].format(**element)
+
+def format_extraction(element: str, type_element: str) -> dict[str]:
+    pattern = re.compile(r"[(){}\[\]]")
+    if type_element != "relationship":
+        keys = ['operation_type']+[pattern.sub("", key) for key in format_mapping[type_element].split("|")[3:]]
+        values = [pattern.sub("", value) for value in element.split("|")[2:]]
+    else:
+        keys = ['operation_type']+[pattern.sub("", key) for key in format_mapping[type_element].split("|")[2:]]
+        values = [pattern.sub("", value) for value in element.split("|")[1:]]
+    element = {key: value for key, value in zip(keys, values)}
+    element["type"] = type_element.lower()
+    return element
 
 def encode_image(image_path):
     """Convert image file to a Base64 string."""
@@ -36,12 +60,29 @@ def query_neo4j_graph(query, params=None):
     graph = Neo4jGraph(url=os.getenv("NEO4J_URI"), username=os.getenv("NEO4J_USERNAME"), password=os.getenv("NEO4J_PASSWORD"))
     return graph.query(query, params)
 
-def similar_entities() -> list[str]:
-    # Delete nodes without embeddings for potential errors
+def embedding_search(element: dict[str], type_element: str = "", limit: int=5, similarity_rate:float = 0.94, synonym_type_filter: str = "", delete_query: bool = True) -> pd.DataFrame:
+    query_neo4j_graph("MATCH (q:Query) DELETE q")
     query_neo4j_graph("""
         MATCH (n:__Entity__) 
         WHERE n.embedding is null
         detach delete n""")
+
+    if type_element != "":
+        query_neo4j_graph(f"""
+            CREATE (n:Query:__Entity__:{type_element} $element)
+        """, params={"element": element})
+    else:
+        query_neo4j_graph(f"""
+            CREATE (n:Query:__Entity__ $element)
+        """, params={"element": element})
+    
+    Neo4jVector.from_existing_graph(
+        embedding=OpenAIEmbeddings(),
+        node_label='Query',
+        text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
+        embedding_node_property='embedding'
+    )
+    
     gds = GraphDataScience(
         "bolt://localhost:7687",
         auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
@@ -61,75 +102,59 @@ def similar_entities() -> list[str]:
         f"""
             CALL gds.knn.stream("synonyms", {{nodeProperties: "embedding", topk: 2}})
             YIELD node1, node2, similarity
-            WHERE similarity > 0.95
+            WHERE similarity > {similarity_rate}
             WITH gds.util.asNode(node1) AS n1, 
                 gds.util.asNode(node2) AS n2,
                 similarity
-            WHERE labels(n1) = labels(n2)
-            RETURN labels(n1) AS entityLabel,
+            WHERE n1:Query {"and n2:"+synonym_type_filter if synonym_type_filter!= "" else ""}
+            RETURN labels(n1) AS n1Label,
+                labels(n2) AS n2Label,
                 n1 {{ .*, embedding: NULL }} AS entity1, 
                 n2 {{ .*, embedding: NULL }} AS entity2,
                 similarity
             ORDER BY similarity DESC
+            LIMIT {limit}
         """
     )
+    if delete_query:
+        query_neo4j_graph("MATCH (n:Query) DELETE n")
+    else:
+        query_neo4j_graph("MATCH (n:Query) REMOVE n:Query RETURN n")
     
-    synonyms = synonyms.drop_duplicates(subset=["similarity"]).drop(labels="similarity", axis=1).reset_index(drop=True)
-    synonyms["entityLabel"] = synonyms["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
-    
-    
-    format_mapping = {
-        "LivingBeing": "(entity|livingbeing||{name}|{species}|{date_of_birth}|{additional_infos})",
-        "Location": "(entity|location||{name}|{city}|{country}|{continent}|{additional_infos})",
-        "Event": "(entity|event||{name}|{date}|{additional_infos})",
-        "Object": "(entity|object||{name}|{type}|{additional_infos})"
-    }
-    
-    result = []
-    for _, row in synonyms.iterrows():
-        entityLabel = row["entityLabel"]
-        if entityLabel in format_mapping:
-            result.append([format_mapping[entityLabel].format(**row['entity1']), format_mapping[entityLabel].format(**row['entity2'])])
-        else:
-            print("Wrong entityLabel found during synonyms search: ",entityLabel)
-            result.append([f"(entity|{entityLabel}|None|{row['entity1'].get('name')}|{row['entity1'].get('additional_infos', 'None')})", f"(entity|{entityLabel}|None|{row['entity2'].get('name')}|{row['entity2'].get('additional_infos', 'None')})"])
-    
-    # Merge of common entities lists
-    # Step 1: Convert list of lists into a list of sets
-    sets = [set(pair) for pair in result]
+    synonyms["n1Label"] = synonyms["n1Label"].map(lambda labels: next((s for s in labels if s not in {"__Entity__", "Query"}), None))
+    synonyms["n2Label"] = synonyms["n2Label"].map(lambda labels: next((s for s in labels if s != "__Entity__"), None))
 
-    # Step 2: Merge sets that have common elements
-    merged = []
-    while sets:
-        first, *rest = sets
-        merged_set = first
-
-        # Try merging sets with common elements
-        changed = True
-        while changed:
-            changed = False
-            new_rest = []
-            for s in rest:
-                if merged_set & s:  # If there is a common element
-                    merged_set |= s  # Merge sets
-                    changed = True
-                else:
-                    new_rest.append(s)
-            rest = new_rest
-
-        merged.append(merged_set)
-        sets = rest  # Continue with remaining sets
-
-    # Step 3: Convert back to list of lists
-    result = [list(group) for group in merged]
-
-    # Output merged lists
-    for group in result:
-        print(group)
+    synonyms.drop(columns=["similarity"], inplace=True)
     
-    return result
-    
+    if synonyms.empty:
+        return f"No similar {synonym_type_filter if synonym_type_filter!='' else 'entities'} found."
+    return synonyms
 
+def similar_entities(element: dict[str], type_element: str, n1Relations: str) -> tuple[str, str, str]:
+    # Delete nodes without embeddings for potential errors
+    synonyms = embedding_search(element, type_element=type_element, limit=1, similarity_rate=0.96, delete_query=False)
+    if type(synonyms) == str:
+        raise FileNotFoundError(synonyms)
+    
+    synonyms = synonyms.iloc[0]
+    
+    result ="\n"
+    n1Label = synonyms["n1Label"]
+    result+=format_conversion(synonyms["entity1"], n1Label)+"\n\n"
+    
+    result+=n1Relations + "\n"
+        
+    result+="-"*50+"\n"
+    
+    n2Label = synonyms["n2Label"]
+    result+=format_conversion(synonyms["entity2"], n2Label)+"\n\n"
+        
+    n2Relations = query_neo4j_graph(f"Match (n:{synonyms['n2Label']})-[r]-(m) where m.name=$name return type(r) as relation_type, m.name as from, n.name as to, r.description as description", params=synonyms['entity2'])
+    for n2Relation in n2Relations:
+        result+=format_conversion(n2Relation, "relationship")+"\n"
+    
+    return (result, synonyms["entity1"]["name"], synonyms["entity2"]["name"])
+    
 @tool
 def load_image(image_path: str) -> Image.Image:
     """Process an image from a given path and return a Pillow Image object. Use it when ask about information on an image and you already have access to its path."""
@@ -326,7 +351,7 @@ def update_neo4j_graph(knowledge: str) -> str:
     return "Successfully updated the Neo4j graph."
 
 @tool
-def search_neo4j_graph(question: str, topk: int = 5) -> str:
+def search_neo4j_graph(question: str) -> str:
     """
     Returns the 5 nearest neighbours of a query embedding as well as their relations in the Neo4j graph.
     Args:
@@ -335,89 +360,27 @@ def search_neo4j_graph(question: str, topk: int = 5) -> str:
         str: A formatted string containing the top 5 nearest neighbours' names, descriptions, and similarity scores.
     Example:
         >>> search_neo4j_graph Who is John?
-        '(entity|livingbeing|None|John|Human|None|None)'
+        '(entity|livingbeing||John|Human||)'
         >>> search_neo4j_graph Why did the family go to Brussels?
-        '(entity|event|None|Family trip to Brussels|2022-07-15|None)'
+        '(entity|event||Family trip to Brussels|2022-07-15|)'
         >>> search_neo4j_graph What happened in 1945?
-        '(entity|event|None|End of World War II|1945-05-08|None)'
+        '(entity|event||End of World War II|1945-05-08|)'
     """
     # Delete nodes without embeddings for potential errors
-    query_neo4j_graph("""
-        MATCH (n:__Entity__) 
-        WHERE n.embedding is null
-        detach delete n""")
-    openai_embedding = OpenAIEmbeddings()
-    gds = GraphDataScience(
-        os.environ["NEO4J_URI"],
-        auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
-    )
-    
-    query_embedded = openai_embedding.embed_query(question)
-    query_neo4j_graph("""CREATE (:Query {name: $name, embedding: $query_embedded})""", params={"name":question, "query_embedded": query_embedded})
-    
-    if gds.graph.exists("entities&query").exists:
-        gds.graph.drop("entities&query")
-    
-    gds.graph.project(
-        "entities&query",
-        ["__Entity__", 'Query'],
-        "*",
-        nodeProperties=["embedding"]
-    )
-
-    top_5 = gds.run_cypher(
-        f"""
-            CALL gds.knn.stream("entities&query", {{nodeProperties:"embedding", topk:2}})
-            YIELD node1, node2, similarity
-            WITH gds.util.asNode(node1) AS s, 
-            gds.util.asNode(node2) AS t,
-            similarity
-            WHERE s:Query and t:__Entity__
-            RETURN t.name AS entityName,
-            labels(t) AS entityLabel,
-            t.additional_infos AS entityAdditional_infos,
-            t.location AS entityLocation,
-            t.date AS entityDate,
-            t.image_path AS imagePath,
-            t.species as entitySpecies,
-            t.date_of_birth AS entityBirthday,
-            t.city as entityCity,
-            t.country as entityCountry,
-            t.continent as entityContinent,
-            t.type as entityType
-            LIMIT {topk}
-        """
-    )
-    
-    query_neo4j_graph("MATCH (q:Query) DELETE q")
-        
-    top_5["entityLabel"] = top_5["entityLabel"].apply(lambda x: next((s for s in x if s != "__Entity__"), None))
-    
-    format_mapping = {
-        "LivingBeing": "(entity|livingbeing||{entityName}|{entitySpecies}|{entityBirthday}|{entityAdditional_infos})",
-        "Location": "(entity|location||{entityName}|{entityCity}|{entityCountry}|{entityContinent}|{entityAdditional_infos})",
-        "Event": "(entity|event||{entityName}|{entityDate}|{entityAdditional_infos})",
-        "Object": "(entity|object||{entityName}|{entityType}|{entityAdditional_infos})",
-        "Image": "(entity|image||{entityName}|{entityDate}|{imagePath}|{entityAdditional_infos})"
-    }
-
+    top_5 = embedding_search({"name": question}, similarity_rate=0.92, delete_query=True)    
     result = "\n"
     for _, row in top_5.iterrows():
-        entity_label = row["entityLabel"]
-        if entity_label in format_mapping:
-            result += format_mapping[entity_label].format(**row) + "\n"
-        else:
-            print(entity_label)
-            result += f"(entity|{entity_label}|None|{row['entityName']}|{row['entityAdditional_infos']})\n"
+        entity_label = row["n2Label"]
+        result += format_mapping[entity_label].format(**row["entity2"]) + "\n"
     
     result += "\n"
     for _, row in top_5.iterrows():
         relations = query_neo4j_graph(
-            "MATCH (m)-[r]-(n) WHERE m.name=$entityName RETURN type(r) as relationType, m.name as from, n.name as to, r.description as description",
-            params=row.to_dict()
+            "MATCH (m)-[r]-(n) WHERE m.name=$name RETURN type(r) as type, m.name as from, n.name as to, r.description as description",
+            params=row["entity2"]
         )
         for relation in relations:
-            result += f"(relationship|{relation['relationType']}|None|{relation['from']}|{relation['to']}|{relation['description']})\n"
+            result += f"(relationship|{relation['type']}||{relation['from']}|{relation['to']}|{relation['description']})\n"
             
     return result if result.strip() else "No results found."
 
@@ -425,49 +388,7 @@ def search_neo4j_graph(question: str, topk: int = 5) -> str:
 def find_image(name: str) -> str:
     """Searches for an image name in the Neo4j graph and returns the image name, date, image_path and additional informations in the right format."""
     # Delete nodes without embeddings for potential errors
-    query_neo4j_graph("""
-        MATCH (n:__Entity__) 
-        WHERE n.embedding is null
-        detach delete n""")
-    openai_embedding = OpenAIEmbeddings()
-    gds = GraphDataScience(
-        os.environ["NEO4J_URI"],
-        auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
-    )
-    
-    name_embedded = openai_embedding.embed_query(name)
-    query_neo4j_graph("""CREATE (:Query {name: $name, embedding: $name_embedded})""", params={"name":name, "name_embedded": name_embedded})
-    
-    if gds.graph.exists("entities&query").exists:
-        gds.graph.drop("entities&query")
-    
-    gds.graph.project(
-        "entities&query",
-        ["Image", 'Query'],
-        "*",
-        nodeProperties=["embedding"]
-    )
-    
-    image_search = gds.run_cypher(
-        f"""
-            CALL gds.knn.stream("entities&query", {{nodeProperties:"embedding", topk:1}})
-            YIELD node1, node2, similarity
-            WITH gds.util.asNode(node1) AS s, 
-            gds.util.asNode(node2) AS t,
-            similarity
-            WHERE s:Query and t:Image
-            RETURN t.name AS name,
-            t.date AS date,
-            t.image_path AS image_path,
-            t.additional_infos AS additional_infos
-            LIMIT 1
-        """
-    )
-    
-    query_neo4j_graph("MATCH (q:Query) DELETE q")
-    
-    if image_search.empty:
-        return "No image found."
+    image_search = embedding_search({"name": name}, type_element="Image", limit=1, similarity_rate=0.94, delete_query=True)
     
     image_infos = image_search.iloc[0].to_dict()
 
