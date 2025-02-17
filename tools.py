@@ -3,6 +3,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 from graphdatascience import GraphDataScience
 from langchain.agents import tool
+from agent import OptimizerAgent
 import pandas as pd
 
 import base64
@@ -36,7 +37,7 @@ def format_extraction(element: str, type_element: str) -> dict[str]:
         keys = ['operation_type']+[pattern.sub("", key) for key in format_mapping[type_element].split("|")[2:]]
         values = [pattern.sub("", value) for value in element.split("|")[1:]]
     element = {key: value for key, value in zip(keys, values)}
-    element["type"] = type_element.lower()
+    element["type_element"] = type_element.lower()
     return element
 
 def encode_image(image_path):
@@ -84,7 +85,7 @@ def embedding_search(element: dict[str], type_element: str = "", limit: int=5, s
     )
     
     gds = GraphDataScience(
-        "bolt://localhost:7687",
+        os.getenv("NEO4J_URI"),
         auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"])
     )
     
@@ -131,10 +132,13 @@ def embedding_search(element: dict[str], type_element: str = "", limit: int=5, s
     return synonyms
 
 def similar_entities(element: dict[str], type_element: str, n1Relations: str) -> tuple[str, str, str]:
-    # Delete nodes without embeddings for potential errors
+    if type_element == "livingbeing":
+        type_element = "LivingBeing"
+    else:
+        type_element = type_element.capitalize()
     synonyms = embedding_search(element, type_element=type_element, limit=1, similarity_rate=0.96, delete_query=False)
     if type(synonyms) == str:
-        raise FileNotFoundError(synonyms)
+        return ("", "", "")
     
     synonyms = synonyms.iloc[0]
     
@@ -167,187 +171,102 @@ def load_image(image_path: str) -> Image.Image:
 def update_neo4j_graph(knowledge: str) -> str:
     "Takes a string of knowledge of correct format and updates the Neo4j graph with the entities and relationships."
     knowledge = [k for k in knowledge.split("\n") if k]
-    for element in knowledge:
-        if "entity" in element:
-            if "livingbeing" in element:
-                element = {
-                    "operation_type": element.split("|")[2],
-                    "name": element.split("|")[3],
-                    "species": element.split("|")[4],
-                    "date_of_birth": element.split("|")[5],
-                    "additional_infos": element.split("|")[6][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-                }
-                if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species DETACH DELETE n", params=element)
-                
-                elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species SET n.date_of_birth=$date_of_birth, n.additional_infos=$additional_infos", params=element)
-                
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species RETURN n.date_of_birth as date_of_birth, n.additional_infos as additional_infos", params=element)) != []:
-                    # Additional check because LLM not perfect and might create multiple times same element
-                    for key in ["date_of_birth", "additional_infos"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                    
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`LivingBeing`) where n.name=$name and n.species=$species SET n.date_of_birth=$date_of_birth, n.additional_infos=$additional_infos", params=element)
-                
-                elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`LivingBeing` {name: $name, species:$species, date_of_birth:$date_of_birth, additional_infos: $additional_infos})", params=element)
-                
-                else:
-                    return f"Invalid operation type for livingbeing '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
-            
-            elif "location" in element:
-                element = {
-                    "operation_type": element.split("|")[2],
-                    "name": element.split("|")[3],
-                    "city": element.split("|")[4],
-                    "country": element.split("|")[5],
-                    "continent": element.split("|")[6],
-                    "additional_infos": element.split("|")[7][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-                }
-                if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name DETACH DELETE n", params=element)
-                
-                elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name SET n.city=$city, n.country=$country, n.continent=$continent, n.additional_infos=$additional_infos", params=element)
-                
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name RETURN n.city as city, n.country as country, n.continent as continent,  n.additional_infos as additional_infos", params=element)) != []:
-                    # Additional check because LLM not perfect and might create multiple times same element
-                    for key in ["city", "country", "continent", "additional_infos"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                    
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Location`) where n.name=$name SET n.city=$city, n.country=$country, n.continent=$continent, n.additional_infos=$additional_infos", params=element)
-                
-                elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Location` {name: $name, city:$city, country:$country, continent:$continent, additional_infos: $additional_infos})", params=element)
-                
-                else:
-                    return f"Invalid operation type for location '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
-            
-            elif "event" in element:
-                element = {
-                    "operation_type": element.split("|")[2],
-                    "name": element.split("|")[3],
-                    "date": element.split("|")[4],
-                    "additional_infos": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-                }
-                if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date DETACH DELETE n", params=element)
-                
-                elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date SET n.additional_infos=$additional_infos", params=element)
-                
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date RETURN n.additional_infos as additional_infos", params=element)) != []:
-                    # Additional check because LLM not perfect and might create multiple times same element
-                    for key in ["additional_infos"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                    
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Event`) where n.name=$name and n.date=$date SET n.additional_infos=$additional_infos", params=element)
-                
-                elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Event` {name: $name, date:$date, additional_infos: $additional_infos})", params=element)
-                
-                else:
-                    return f"Invalid operation type for event '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
-            
-            elif "object" in element:
-                element = {
-                    "operation_type": element.split("|")[2],
-                    "name": element.split("|")[3],
-                    "type": element.split("|")[4],
-                    "additional_infos": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-                }
-                if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name DETACH DELETE n", params=element)
-                
-                elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name SET n.type=$type, n.additional_infos=$additional_infos", params=element)
-                
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name RETURN n.type as type,  n.additional_infos as additional_infos", params=element)) != []:
-                    # Additional check because LLM not perfect and might create multiple times same element
-                    for key in ["type", "additional_infos"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                    
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Object`) where n.name=$name SET n.type=$type, n.additional_infos=$additional_infos", params=element)
-                
-                elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Object` {name: $name, type:$type, additional_infos: $additional_infos})", params=element)
-                
-                else:
-                    return f"Invalid operation type for object '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
-            
-            elif "image" in element:
-                element = {
-                    "operation_type": element.split("|")[2],
-                    "name": element.split("|")[3],
-                    "date": element.split("|")[4],
-                    "path": element.split("|")[5],
-                    "additional_infos": element.split("|")[6][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-                }
-                if element["operation_type"] == "Deleted":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name DETACH DELETE n", params=element)
-                
-                elif element["operation_type"] == "Updated":
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.image_path=$path, n.additional_infos=$additional_infos", params=element)
-                
-                elif (result := query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name RETURN n.date as date,  n.additional_infos as additional_infos", params=element)) != []:
-                    # Additional check because LLM not perfect and might create multiple times same element
-                    for key in ["date", "additional_infos"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                    
-                    query_neo4j_graph("MATCH (n:`__Entity__`:`Image`) where n.name=$name SET n.date=$date, n.image_path=$path, n.additional_infos=$additional_infos", params=element)
-                
-                elif element["operation_type"] == "Created":
-                    query_neo4j_graph("CREATE (n:`__Entity__`:`Image` {name: $name, date:$date, image_path:$path, additional_infos: $additional_infos})", params=element)
-                
-                else:
-                    return f"Invalid operation type for image '{element['name']}': either Created, Updated or Deleted needs to be put in second position <entity_type>|<operation_type>|..."
-            
-            else:
-                return f"Invalid entity type: either livingbeing, location, event, object or image needs to be put in second position entity|<entity_type>|<operation_type>|..."
-        elif "relationship" in element:
-            if len(element.split("|"))!=6:
-                return f"Invalid format {element}: relationships should follow the following format: (relationship|<relation_type>|<operation_type>|<from>|<to>|<description>)"
-            element = {
-                "relation_type": element.split("|")[1],
-                "operation_type": element.split("|")[2],
-                "from": element.split("|")[3],
-                "to": element.split("|")[4],
-                "description": element.split("|")[5][:-1] # [:-1] to remove the closing parenthesis of the entity/relationship
-            }
-            if element["relation_type"] not in ['CUSTOM','SEEN_IN','WENT_TO','LIVE_IN','BORN_IN','LIKE','DISLIKE','BELONG_TO','TOOK_PLACE_IN','REPRESENT','PARTICIPATED_IN','FAMILY','COUPLE','FRIEND','ACQUAINTANCE']:
-                return f"Invalid relation type {element['relation_type']}: either LIVE_IN, BORN_IN, LIKE, DISLIKE, BELONG_TO, TOOK_PLACE_IN, REPRESENT, PARTICIPATED_IN, FAMILY, COUPLE, FRIEND or ACQUAINTANCE needs to be put in second position relationship|<relation_type>|<operation_type>|..."
-                            
-            if element["operation_type"] == "Deleted":
-                query_neo4j_graph(f"MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to DELETE r", params=element)
-            elif element["operation_type"] == "Updated":
-                query_neo4j_graph(f"MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description", params=element)
-            elif (result := query_neo4j_graph("MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to RETURN r.description as description", params=element)) != []:
-                # Additional check because LLM not perfect and might create multiple times same element
-                for key in ["description"]:
-                        if key in result[0] and result[0][key] is not None:
-                            element[key] = result[0][key]
-                query_neo4j_graph(f"MATCH (m:__Entity__)-[r:"+element['relation_type']+"]->(n:__Entity__) where m.name=$from and n.name=$to SET r.description=$description", params=element)
-            elif element["operation_type"] == "Created":
+    for entity in [entities for entities in knowledge if "entity" in entities]:
+        if "livingbeing" in entity:
+            entity = format_extraction(entity, type_element='LivingBeing')
+        elif "object" in entity or "location" in entity or "event" in entity:
+            entity = format_extraction(entity, type_element=[type_element.capitalize() for type_element in ["event", "object", "location"] if type_element in entity][0])
+        elif "image" in entity:
+            # In case it is an image, we don't do any similarity search and just create it with its relationships.
+            entity = format_extraction(entity, type_element='Image')
+            element.pop("operation_type", None)
+            element.pop("type_element", None)
+            query_neo4j_graph("MERGE (n:__Entity__:Image {{image_path=$image_path}}) SET n = $entity", {"image_path":entity["image_path"], "entity":entity})
+            for relationship in [relationships for relationships in knowledge if "relationship" in relationships and entity["name"] in relationships]:
+                relationship = format_extraction(relationship, type_element='relationship')
+                element.pop("operation_type", None)
+                element.pop("type_element", None)
                 query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
-            else:
-                return "Invalid operation type: either Created, Updated or Deleted needs to be put in second position relationship|<operation_type>|..."
+            continue
         else:
-            return f"Invalid format {element}: the first word of each line should be either entity or relationship entity|... or relationship|..."
-    
-    # Update the embeddings of the entities
-    Neo4jVector.from_existing_graph(
-        embedding=OpenAIEmbeddings(),
-        node_label='__Entity__',
-        text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
-        embedding_node_property='embedding'
-    )
-    
+            return f"Entity type not recognized {entity}: Only [livingbeing, object, location, event, image] are accepted."
+        
+        if entity["operation_type"] == "Updated":
+            entity.pop("operation_type", None)
+            if entity["type_element"] == "livingbeing":
+                element_type = "LivingBeing"
+            else:
+                element_type = entity["type_element"].capitalize()
+            entity.pop("type_element", None)
+            query_neo4j_graph(f"MERGE (n:`__Entity__`:{element_type} {{name=$name}}) SET n = $entity", {"name":entity["name"], "entity":entity})
+            
+            for relationship in [relationships for relationships in knowledge if "relationship" in relationships and entity["name"] in relationships]:
+                element = format_extraction(relationship, type_element='relationship')
+                element.pop("operation_type", None)
+                element.pop("type_element", None)
+                query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
+            
+        elif entity["operation_type"] == "Deleted":
+            query_neo4j_graph("MATCH (n) where n.name=$name DETACH DELETE n", {"name":entity["name"]})
+        elif entity["operation_type"] == "Created":
+            # Check if similar entities already exists.
+            entity_relationships = "\n"
+            for relationship in [relationships for relationships in knowledge if "relationship" in relationships and entity["name"] in relationships]:
+                entity_relationships+=relationship+"\n"
+            
+            print("Entity to update: "+entity)
+            print("Relations to update: "+entity_relationships)
+            
+            # Do a embedding similarity search to find similar entities
+            synonyms, n1Name, n2Name = similar_entities(entity, entity["type_element"], "\n".join(entity_relationships))
+            print("Synonyms: ",synonyms)
+            if synonyms != "":
+                # If there exists synonyms, pass it to an agent to check if the entities are the same or not, eg. two livingbeing with same description but different names.
+                optimizer = OptimizerAgent()
+                modelAnswer = optimizer(synonyms)
+                print(modelAnswer)
+            
+            if synonyms == "" or modelAnswer.strip() == "Nothing to merge.":
+                # Simply add the new relationships to the new entity
+                if entity_relationships != "":
+                    for relation in entity_relationships.strip().split("\n"):
+                        element = format_extraction(relation, type_element='relationship')
+                        print(element)
+                        element.pop("operation_type", None)
+                        element.pop("type_element", None)
+                        query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
+            else:
+                # Delete the old and new entity and create a new "merged" one
+                query_neo4j_graph("MATCH (n) where n.name=$n1Name or n.name=$n2Name DETACH DELETE n", {"n1Name":n1Name, "n2Name":n2Name})
+                for answer in [line for line in modelAnswer.strip().split("\n") if "entity" in line]:
+                    print(answer)
+                    if "livingbeing" in answer:
+                        element = format_extraction(answer, type_element='LivingBeing')
+                        element.pop("operation_type", None)
+                        element_type = "LivingBeing"
+                        element.pop("type_element", None)
+                        query_neo4j_graph(f"CREATE (n:__Entity__:{element_type}) SET n = $element", {"element":element})
+                    else:
+                        element = format_extraction(answer, type_element=[type_element.capitalize() for type_element in ["event", "object", "location"] if type_element in answer][0])
+                        element.pop("operation_type", None)
+                        element_type = element["type_element"].capitalize()
+                        element.pop("type_element", None)
+                        query_neo4j_graph(f"CREATE (n:__Entity__:{element_type}) SET n = $element", {"element":element})
+                    
+                    for relationship in [line for line in modelAnswer.strip().split("\n") if "relationship" in line and element["name"] in line]:
+                        element = format_extraction(answer, type_element='relationship')
+                        element.pop("operation_type", None)
+                        query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
+
+            Neo4jVector.from_existing_graph(
+                    embedding=OpenAIEmbeddings(),
+                    node_label='__Entity__',
+                    text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
+                    embedding_node_property='embedding'
+                )
+        else:
+            return f"Operation type not recognized {entity['operation_type']}: Only [Updated, Deleted, Created] are accepted."
+            
     return "Successfully updated the Neo4j graph."
 
 @tool

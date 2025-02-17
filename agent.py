@@ -2,7 +2,6 @@
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.prompts import PromptTemplate
-from tools import update_neo4j_graph, search_neo4j_graph, load_image, similar_entities, replace_emotes, find_image
 from PIL import Image
 import time
 import ast
@@ -111,6 +110,7 @@ class ReActAgent:
     
 class UpdateAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
+        from tools import update_neo4j_graph, search_neo4j_graph, load_image
         system="You are a smart and curious database management agent. From a given text, you test the knowledge of a graph database and update it."
         
         tools = [update_neo4j_graph, search_neo4j_graph, load_image]
@@ -142,6 +142,7 @@ class UpdateAgent(ReActAgent):
         
 class AnswerAgent(ReActAgent):
     def __init__(self, max_output_tokens: int=30000, temperature: float=0.5):
+        from tools import search_neo4j_graph, load_image, find_image
         system="You are a caring, harmless and helpful assistant answering questions about a graph database, helping people remember pasts events and make decisions accordingly."
         
         tools = [search_neo4j_graph, find_image, load_image]
@@ -162,6 +163,7 @@ class AnswerAgent(ReActAgent):
         super().__init__(model, tools, system)
         
     def __call__(self, message:str, image_path:str = "", verbose=False):
+        from tools import replace_emotes
         if image_path != "":
             image = Image.open(image_path)
         else:
