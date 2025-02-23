@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
+from apscheduler.schedulers.background import BackgroundScheduler
+from backup import backup
 import threading
 from flask_cors import CORS
 from agent import AnswerAgent, UpdateAgent
 from tools import query_neo4j_graph
-from PIL import Image
 import os
 import base64
 import re
@@ -21,6 +22,10 @@ def after_request(response):
 
 image_folder = "./images"
 agents = [AnswerAgent(), UpdateAgent()]
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(backup, 'interval', minutes=30) 
+scheduler.start()
 
 def save_image(image_base64):
     try:
@@ -51,7 +56,7 @@ def generate_answer():
             image_path = save_image(image_base64)
         else:
             image_path = ""
-        thread = threading.Thread(target=update_graph, args=(text, image_path))
+        thread = threading.Thread(target=update_graph, args=(text, image_path), daemon=True)
         answer = ""
         while not (isinstance(answer, dict) and  "message" in answer and isinstance(answer["message"], str) and "images" in answer and isinstance(answer["images"], list) and all(isinstance(img, str) for img in answer["images"])):
             answer = agents[0](message=text, image_path=image_path, verbose=True)
@@ -81,4 +86,4 @@ def get_image(image_name):
     return jsonify(search_result)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5124, debug=True)
+    app.run(host="0.0.0.0", port=5124, use_reloader=False)
