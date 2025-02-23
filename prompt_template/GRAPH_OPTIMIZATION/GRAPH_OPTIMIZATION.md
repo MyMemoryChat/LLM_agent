@@ -1,12 +1,12 @@
 -Goal-
-    After receiving 2 or more graph entities, decide if a merging is possible. 
-        - If yes, create a new entity with the right relationships.
+    Decide if 2 entities with/without relationships are the same or not. 
+        - If yes, create a new entity regrouping the information of both with the right relationships.
         - If no, return "Nothing to merge.".
 
 -Merging Criterias-
     The criterias for merging depend on the label of the entities:
         - LivingBeing: (entity|livingbeing|<operation_type>|<name>|<species>|<date_of_birth>|<additional_infos>)
-            When: You can merge livingbeing entities only if they share a similar name, species and date_of_birth. 
+            When: They represent the same livingbeing but with different informations. 
             How: Take the most detailled name, species and date_of_birth and merge the two additional_infos to keep the informations of both.
         - Location: (entity|location|<operation_type>|<name>|<city>|<country>|<continent>|<additional_infos>)
             When: You can merge location entities only if they share a similar name, city, country and continent. 
@@ -17,12 +17,14 @@
         - Object: (entity|object|<operation_type>|<name>|<type>|<additional_infos>)
             When: You can merge object entities only if they share a similar name, and type. 
             How: Keep the most precise name and type, and merge the information of both additional_infos.
+    Merging two entities of different labels is possible, since a wrong label could have been given at some point.
     Additionally, you will also receive the relationships of the entities you are comparing. When merging the entities, you need to specify the relationship with the newly created entity. 
-    Relationships are formatted as such: (relationship|<operation_type>|<relation_type>|<from>|<to>|<description>) e.g. (relationship||BORN_IN|A|Istanbul|A was born in Istanbul.)
+    Relationships are formatted as such: (relationship|<relation_type>|<operation_type>|<from>|<to>|<description>) e.g. (relationship|BORN_IN||A|Istanbul|A was born in Istanbul.)
 
 -Important notice-
-    - You must output the list of entities and relationships to CREATE or return "Nothing to merge."
+    - You must output the list of entities and relationships to CREATE or return "Nothing to merge." if the two entities are different.
     - Don't return any code.
+    - If there is no merging to do, return "Nothing to merge."! Not following this would lead to crash and/or catastrophic forgetting of graph entities.
 
 -Example Session 1-
     User:
@@ -41,7 +43,7 @@
     (relationship||PARTICIPATED_IN|Noé|Winter trip to Strasbourg|Noé participated in the winter trip to Strasbourg.)
     (relationship||REPRESENT|Strasbourg Christmas Tree with Noé and Sophie|Winter trip to Strasbourg|The image represents the winter trip to Strasbourg.)
 
-    Model:
+    Model: (All those events took place during the same period, are geographically close and have the same participants, hence they can be grouped as one.)
     (entity|event|Created|Noé and Sophie's Winter 2024 trip in Europe|Winter 2024|During this trip Noé and Sophie explored a lot of places like Strasbourg and Vatican City.)
 
     (relationship|Created|TOOK_PLACE_IN|Noé and Sophie's Winter 2024 trip in Europe|Strasbourg|Noé and Sophie visited Strasbourg during their romantic trip.)
@@ -64,7 +66,7 @@
     --------------------------------------------------
     (entity|livingbeing||Sarah|Human|None|Girlfriend of Elliot)
 
-    Model: Nothing to merge.
+    Model: Nothing to merge. (They are two different livingbeing)
 
 -Inference-
     User: {input}

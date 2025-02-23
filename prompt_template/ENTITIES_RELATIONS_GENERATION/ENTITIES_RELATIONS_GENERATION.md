@@ -129,7 +129,7 @@
         - to: Entity with any type,
         - description: detailed informations about the relations (You have to put all the information you can here).
     When updating, a relationship format it as such: 
-        (relationship|<relation_type>|<operation_type>|<from>|<to>|<description>)
+        (relationship|<operation_type>|<relation_type>|<from>|<to>|<description>)
 
 
 -Steps-
@@ -141,10 +141,10 @@
         3. Pass the formatted entities and relationships into the valid tool to update the neo4j knowledge graph. ** Important: Relationships can't reference non-existing entities. You have to double check your spelling or create new entities to avoid errors **
 
 -Important Notice-
-    - Always wait for the user to call you again after generating a PAUSE!
+    - Don't forget to generate a PAUSE after an action and always stop the generation after a PAUSE.
     - Add as much as possible informations in the additional_infos and make them all different from each other toavoid strong similarities. For that you can use your own knowledge of locations or objects.
     - If there is no picture and image_path provided, don't create an image entity.
-    - When using the update neo4j graph tool, you must use '\n' between every (entity).
+    - When using the update neo4j graph tool, you must use go to the line between every (entity).
 
 -Example session-
 
@@ -160,15 +160,15 @@
     (entity|livingbeing|A's mother|Human|None|None|None|She used to live in Istanbul but when her husband got a job in Ankara, she moved with him.)
     (entity|object|A's home|House|The house of A in Istanbul.)
 
-    (relationship|LIVE_IN|A|Istanbul|A lives in Istanbul.)
-    (relationship|BORN_IN|A|Istanbul|A was born in Istanbul.)
-    (relationship|COUPLE|A|B|A is dating B since 11-12-2023.)
-    (relationship|LIVE_IN|A|Cairo|A lives in Cairo to study her Bachelor in Biology)
-    (relationship|FAMILY|A|A's mother|A is the daughter of A's Mother's.)
-    (relationship|LIKE|A|Coffee|A likes coffee.)
-    (relationship|DISLIKE|A|Raw fish|A dislikes raw fish.)
-    (relationship|LIVE_IN|A's mother|Ankara|A's mother lives in Ankara.)
-    (relationship|BELONG_TO|A's home|A|A's home belongs to A.)
+    (relationship||LIVE_IN|A|Istanbul|A lives in Istanbul.)
+    (relationship||BORN_IN|A|Istanbul|A was born in Istanbul.)
+    (relationship||COUPLE|A|B|A is dating B since 11-12-2023.)
+    (relationship||LIVE_IN|A|Cairo|A lives in Cairo to study her Bachelor in Biology)
+    (relationship||FAMILY|A|A's mother|A is the daughter of A's Mother's.)
+    (relationship||LIKE|A|Coffee|A likes coffee.)
+    (relationship||DISLIKE|A|Raw fish|A dislikes raw fish.)
+    (relationship||LIVE_IN|A's mother|Ankara|A's mother lives in Ankara.)
+    (relationship||BELONG_TO|A's home|A|A's home belongs to A.)
 
     Observation: I see that A and B are a couple. I notice that the information about A living in Cairo is obsolete.
     Thought: I don't have to update the entity A, since no new personal data was found in the text, but I can update its relationship with B. Additionally, I need to delete the obsolete elements. Also I don't see an event about their trip to Paris so I'll create one as well as its relationships, and save the new image.
@@ -176,11 +176,11 @@
     (entity|event|Created|A's anniversary in Paris|??-12-2024|A and B went on a trip to Paris to celebrate A's birthday and graduation!)
     (entity|image|Created|A and B drinking Coffee|??-12-2024|A and B are drinking a coffee in Starbucks during their trip to Paris.)
 
-    (relationship|REPRESENT|Created|A and B drinking Coffee|A's anniversary in Paris| This picture was taken during their trip in Paris for A's birthday and graduation.)
-    (relationship|PARTICIPATED_IN|Created|A|A's anniversary in Paris|A was in Paris for her 26th birthday with her boyfriend B.)
-    (relationship|PARTICIPATED_IN|Created|B|A's anniversary in Paris|B went to Paris with A for her 26th birthday.)
-    (relationship|COUPLE|Updated|A|B|A is dating B since 11-12-2023. This winter 2024 they went to Y on a trip.)
-    (relationship|LIVE_IN|Deleted|A|Cairo|A lives in Cairo to study her Bachelor in Biology)
+    (relationship|Created|REPRESENT|A and B drinking Coffee|A's anniversary in Paris| This picture was taken during their trip in Paris for A's birthday and graduation.)
+    (relationship|Created|PARTICIPATED_IN|A|A's anniversary in Paris|A was in Paris for her 26th birthday with her boyfriend B.)
+    (relationship|Created|PARTICIPATED_IN|B|A's anniversary in Paris|B went to Paris with A for her 26th birthday.)
+    (relationship|Updated|COUPLE||A|B|A is dating B since 11-12-2023. This winter 2024 they went to Y on a trip.)
+    (relationship|Deleted|LIVE_IN|A|Cairo|A lives in Cairo to study her Bachelor in Biology)
     PAUSE
 
     (You will be called again with the output of the function.)

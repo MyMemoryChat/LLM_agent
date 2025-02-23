@@ -4,7 +4,7 @@ from google.api_core.exceptions import ResourceExhausted
 from langchain_core.prompts import PromptTemplate
 from PIL import Image
 import time
-import ast
+import json
 
 import os
 from dotenv import load_dotenv
@@ -68,7 +68,7 @@ class ReActAgent:
         while True:
             response = self.execute(verbose)
             self.messages.append({"role": "model", "parts": response})
-            if not response.strip().endswith("PAUSE") or response.strip().endswith("End"):
+            if not "PAUSE" in response or response.strip().endswith("End"):
                 break
             response = response.split("Action:")[1].split("PAUSE")[0]
             for tool in self.tools:
@@ -172,13 +172,15 @@ class AnswerAgent(ReActAgent):
         message = "Images and knowledges are stored in a graph database. Access the information you don't have using the available tools: \n" + message
         
         completion = super().__call__(message=[image, message], verbose=verbose)
-        print(completion)
         try:
-            completion = completion.split("Answer:")[1].strip()
+            completion = completion.split("Answer:")[1].split("End")[-2].strip()
         except IndexError:
             pass
         try:
-            response_dict = ast.literal_eval(completion)
+            if completion.startswith("```json") and completion.endswith("```"):
+                completion = completion[7:-3].strip()
+                
+            response_dict = json.loads(completion)
             response_dict["message"] = replace_emotes(response_dict["message"]).strip()
         except (SyntaxError, ValueError) as e:
             raise Exception(f"Error when parsing completion: {e};\n", completion)

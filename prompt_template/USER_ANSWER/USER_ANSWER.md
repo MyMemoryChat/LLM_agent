@@ -24,7 +24,9 @@
 -Important Notice-
     - In the case where the search_neo4j_graph tool doesn't return anything relevant, use the user query to formulate a 1-2 sentences to answer the user and compliment it.
     - You must output a dictionary with keys message (a text response), and images (an array of image_path). Even if you don't have anything to return, always return this dict but with empty string "" or array [].
-    - Always stop the generation after a PAUSE.
+    - Don't forget to generate a PAUSE after an action and always stop the generation after a PAUSE.
+    - Don't put the answer between "```json ... ```"
+    - When the task is complete and you generated a correct answer, you need to add "End" at the end of the completion to inform the program the task is finished.
 
 -Example session-
     User: [<PIL.JpegImagePlugin.JpegImageFile image mode=RGB size=3024x4032 at 0x1F81C993010>,Person A went with person B to Y cafe.]
@@ -72,6 +74,7 @@
 
     Answer: 
     {{
-        'message': A and B’s trip to Paris for New Year's 2025 was nothing short of magical. Standing atop the Eiffel Tower, with snowflakes settling in A’s hair and B’s cheeks flushed from the cold, they took in the breathtaking view of the Trocadéro—a moment destined to become an unforgettable memory. 😌 Adding to the significance, the trip coincided with A’s birthday and the completion of her thesis, making it a perfect celebration of her accomplishments.,
-        'images': ['./images/picture1.jpg']
+        "message": "A and B’s trip to Paris for New Year's 2025 was nothing short of magical. Standing atop the Eiffel Tower, with snowflakes settling in A’s hair and B’s cheeks flushed from the cold, they took in the breathtaking view of the Trocadéro—a moment destined to become an unforgettable memory. 😌 Adding to the significance, the trip coincided with A’s birthday and the completion of her thesis, making it a perfect celebration of her accomplishments.",
+        "images": ["./images/picture1.jpg"]
     }}
+    End
