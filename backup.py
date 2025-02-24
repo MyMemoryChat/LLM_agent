@@ -30,6 +30,17 @@ def neo4jdb_backup(backup_dir: str, db_name: str, db_path: str) -> bool:
     print(f"Backup completed: {backup_dir}\\{db_name}.dump")
     return True
 
+def restore(backup_dir: str, db_name: str, db_path: str):
+    load_command = [
+        f"{db_path}/bin/neo4j-admin",
+        "load",
+        "--database=" + db_name,
+        "--from=" + f"{backup_dir}/{db_name}.dump",
+        "--force"
+    ]
+    subprocess.run(load_command, check=True)
+    print(f"Database {db_name} restored successfully from {backup_dir}/{db_name}.dump.")
+
 def backup():
     images_dir = r"C:\Users\jager\Desktop\github\my_memory\LLM_agent\images"
     backup_dir = os.path.join(r"C:\Users\jager\Desktop\github\my_memory\LLM_agent\backups", time.strftime("%Y%m%d-%H%M%S"))
@@ -40,6 +51,13 @@ def backup():
     
     if images_backup(backup_dir, images_dir) and neo4jdb_backup(backup_dir, db_name, db_path):
         print("Backup completed successfully")
+        backup_count = len([name for name in os.listdir(r"C:\Users\jager\Desktop\github\my_memory\LLM_agent\backups")])
+
+        if backup_count > 5:
+            backups = sorted([name for name in os.listdir(r"C:\Users\jager\Desktop\github\my_memory\LLM_agent\backups")])
+            oldest_backup = os.path.join(r"C:\Users\jager\Desktop\github\my_memory\LLM_agent\backups", backups[0])
+            shutil.rmtree(oldest_backup)
+            print(f"Deleted oldest backup folder: {oldest_backup}")
         return
     else:
         raise Exception("Backup failed")
