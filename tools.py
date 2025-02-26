@@ -61,27 +61,26 @@ def query_neo4j_graph(query, params=None):
     graph = Neo4jGraph(url=os.getenv("NEO4J_URI"), username=os.getenv("NEO4J_USERNAME"), password=os.getenv("NEO4J_PASSWORD"))
     return graph.query(query, params)
 
-def embedding_search(element: dict[str], type_element: str = "", expected_output_type: str = None, limit: int=5, similarity_rate:float = 0.94, synonym_type_filter: str = "", delete_query: bool = True) -> pd.DataFrame:
+def embedding_search(element: dict[str], type_element: str = "", expected_output_type: str = None, limit: int=5, similarity_rate:float = 0.90, synonym_type_filter: str = "", delete_query: bool = True) -> pd.DataFrame:
     query_neo4j_graph("MATCH (q:Query) DELETE q")
     query_neo4j_graph("""
         MATCH (n:__Entity__) 
         WHERE n.embedding is null
         detach delete n""")
-
     if type_element == "":
         existing_entity = query_neo4j_graph("""
-            MATCH (n:__Entity__ {uuid: $element.uuid})
+            MATCH (n:__Entity__ {name: $name})
             RETURN n, labels(n) as labels
-        """, params={"element": element})
+        """, params={"name": element["name"]})
         if existing_entity == []:
             query_neo4j_graph("""
                 CREATE (n:Query:__Entity__ $element)
             """, params={"element": element})
     else:
         existing_entity = query_neo4j_graph(f"""
-            MATCH (n:__Entity__:{type_element} {{uuid: $element.uuid}})
+            MATCH (n:__Entity__:{type_element} {{uuid: $uuid, name: $name}})
             RETURN n, labels(n) as labels
-        """, params={"element": element})
+        """, params={"uuid": element["uuid"], "name": element["name"]})
         if existing_entity == []:
             query_neo4j_graph(f"""
                 CREATE (n:Query:__Entity__:{type_element} $element)
@@ -91,7 +90,7 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
         Neo4jVector.from_existing_graph(
             embedding=OpenAIEmbeddings(),
             node_label='__Entity__',
-            text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
+            text_node_properties=['name', 'date','species','city','country','continent','type', 'date_of_birth'],
             embedding_node_property='embedding'
         )
         
@@ -219,13 +218,30 @@ def update_neo4j_graph(knowledge: str) -> str:
                     relationship = format_extraction(relationship, type_element='relationship')
                     relationship.pop("operation_type", None)
                     relationship.pop("type_element", None)
-                    query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+relationship['relation_type']+"]->(n) SET r.description = $description", params={"from": relationship["from"], "to": relationship["to"], "description": relationship["description"]})
+                    query_neo4j_graph(
+                        f"""
+                            MATCH (m:__Entity__), (n:__Entity__) 
+                            WHERE m.name = $from AND n.name = $to 
+                            MERGE (m)-[r:{relationship['relation_type']}]->(n) 
+                            SET r.description = $description
+                        """,
+                        params={"from": relationship["from"], "to": relationship["to"], "description": relationship["description"]})
                 Neo4jVector.from_existing_graph(
                     embedding=OpenAIEmbeddings(),
                     node_label='__Entity__',
-                    text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
+                    text_node_properties=['name', 'date','species','city','country','continent','type', 'date_of_birth'],
                     embedding_node_property='embedding'
                 )
+                query_neo4j_graph("""
+                    MATCH (n)
+                    WHERE n.uuid is NULL
+                    SET n.uuid = randomUUID()
+                """)
+                query_neo4j_graph("""
+                    MATCH ()-[r]-()
+                    WHERE r.uuid is NULL
+                    SET r.uuid = randomUUID()
+                """)
                 continue
             else:
                 return f"Entity type not recognized {entity}: Only [livingbeing, object, location, event, image] are accepted."
@@ -252,7 +268,14 @@ def update_neo4j_graph(knowledge: str) -> str:
                         continue
                     element.pop("operation_type", None)
                     element.pop("type_element", None)
-                    query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+element['relation_type']+" {uuid : $uuid}]->(n) SET r.description = $description", params={"from": element["from"], "to": element["to"], "uuid": uuid, "description": element["description"]})
+                    query_neo4j_graph(
+                            f"""
+                                MATCH (m:__Entity__), (n:__Entity__) 
+                                WHERE m.name = $from AND n.name = $to 
+                                MERGE (m)-[r:{relation['relation_type']} {{uuid: $uuid}}]->(n) 
+                                SET r.description = $description
+                            """,
+                            params={"from": relation["from"], "to": relation["to"], "description": relation["description"], "uuid": uuid})
                 
             elif entity["operation_type"] == "Deleted":
                 # Delete the corresponding name and label entity and its relationships
@@ -280,12 +303,17 @@ def update_neo4j_graph(knowledge: str) -> str:
                         element = format_extraction(relation, type_element='relationship')
                         element.pop("operation_type", None)
                         element.pop("type_element", None)
-                        query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+element['relation_type']+"]->(n) SET r.description = $description", params={"from": element["from"], "to": element["to"], "description": element["description"]})
+                        query_neo4j_graph(f"""
+                                MATCH (m:__Entity__), (n:__Entity__) 
+                                WHERE m.name = $from AND n.name = $to 
+                                MERGE (m)-[r:{relation['relation_type']}]->(n) 
+                                SET r.description = $description
+                            """,
+                            params={"from": relation["from"], "to": relation["to"], "description": relation["description"]})
                 else:
                     # If merge, delete the old and new entity and create a new "merged" one
                     query_neo4j_graph("MATCH (n) where n.n1Uuid=$n1Uuid or n.n2Uuid=$n2Uuid DETACH DELETE n", {"n1Uuid":n1Uuid, "n2Uuid":n2Uuid})
                     for answer in [line for line in modelAnswer.strip().split("\n") if "entity" in line]:
-                        print(answer)
                         if "livingbeing" in answer:
                             element = format_extraction(answer, type_element='LivingBeing')
                             element.pop("operation_type", None)
@@ -299,7 +327,6 @@ def update_neo4j_graph(knowledge: str) -> str:
                             element.pop("type_element", None)
                             query_neo4j_graph(f"MERGE (n:__Entity__:{element_type} {{name:$name}}) SET n = $element", {"name": element["name"], "element": element})
                         for relationship in [line for line in modelAnswer.strip().split("\n") if "relationship" in line and element["name"] in line]:
-                            print(relationship)
                             relationship = format_extraction(relationship, type_element='relationship')
                             relationship.pop("operation_type", None)
                             query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[:"+relationship['relation_type']+" {description: $description}]->(n)", params=relationship)
@@ -309,15 +336,20 @@ def update_neo4j_graph(knowledge: str) -> str:
             Neo4jVector.from_existing_graph(
                 embedding=OpenAIEmbeddings(),
                 node_label='__Entity__',
-                text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
+                text_node_properties=['name', 'date','species','city','country','continent','type', 'date_of_birth'],
                 embedding_node_property='embedding'
             )
             
             # Create uuid for nodes and relationships which don't have one
             query_neo4j_graph("""
-                MATCH (n)-[r]-()
-                WHERE n.uuid IS NULL OR r.uuid is NULL
-                SET n.uuid = randomUUID(), r.uuid = randomUUID()
+                MATCH (n)
+                WHERE n.uuid is NULL
+                SET n.uuid = randomUUID()
+            """)
+            query_neo4j_graph("""
+                MATCH ()-[r]-()
+                WHERE r.uuid is NULL
+                SET r.uuid = randomUUID()
             """)
     elif (relations := [relations for relations in knowledge if "relations" in relations]):
         for relation in relations:
@@ -327,13 +359,26 @@ def update_neo4j_graph(knowledge: str) -> str:
             else:
                 relation.pop("operation_type", None)
                 relation.pop("type_element", None)
-                query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+relation['relation_type']+"]->(n) SET r.description = $description", params={"from": relation["from"], "to": relation["to"], "description": relation["description"]})
+                query_neo4j_graph(
+                    f"""
+                    MATCH (m:__Entity__), (n:__Entity__) 
+                    WHERE m.name = $from AND n.name = $to 
+                    MERGE (m)-[r:{relation['relation_type']}]->(n) 
+                    SET r.description = $description
+                    """,
+                    params={"from": relation["from"], "to": relation["to"], "description": relation["description"]}
+                )
         
         # Create uuid for nodes and relationships which don't have one
         query_neo4j_graph("""
-            MATCH (n)-[r]-()
-            WHERE n.uuid IS NULL OR r.uuid is NULL
-            SET n.uuid = randomUUID(), r.uuid = randomUUID()
+            MATCH (n)
+            WHERE n.uuid is NULL
+            SET n.uuid = randomUUID()
+        """)
+        query_neo4j_graph("""
+            MATCH ()-[r]-()
+            WHERE r.uuid is NULL
+            SET r.uuid = randomUUID()
         """)
     else:
         return "No entities or relationships found in the arguments: "+"\n".join(knowledge)
@@ -360,7 +405,6 @@ def search_neo4j_graph(question: str) -> str:
     
     if type(top_5) == str:
         return top_5    
-       
     result = "\n"
     for _, row in top_5.iterrows():
         entity_label = row["n2Label"]
@@ -374,13 +418,13 @@ def search_neo4j_graph(question: str) -> str:
         )
         for relation in relations:
             result += format_conversion(relation, type_element="relationship") + "\n"
-            
+    
     return result if result.strip() else "No results found."
 
 @tool
 def find_image(name: str) -> str: 
     """Searches for an image name in the Neo4j graph and returns the image name, date, image_path and additional informations in the right format."""
-    image_search = embedding_search({"name": name}, type_element="Image", expected_output_type="Image", limit=1, similarity_rate=0.94, delete_query=True)
+    image_search = embedding_search({"name": name}, expected_output_type="Image", limit=1, similarity_rate=0.94, delete_query=True)
     if type(image_search) == str:
         return image_search
     else:

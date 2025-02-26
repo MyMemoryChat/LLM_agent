@@ -63,8 +63,13 @@ def save_image(image_base64):
 def update_graph(message:str, image_path:str=""):
     agents[1](message=message, image_path=image_path, verbose=True)
 
+# Lock to prevent concurrent generations
+generate_lock = threading.Lock()
+
 @app.route("/generate", methods=["POST"])
 def generate_answer():
+    if not generate_lock.acquire(blocking=False):  # Try to acquire lock, if unavailable return busy message
+        return jsonify({"error": "Server is busy processing another request"}), 429
     try:
         start_time = time.time()
         text = request.json.get("text")
@@ -73,7 +78,13 @@ def generate_answer():
             image_path = save_image(image_base64)
         else:
             image_path = ""
-        thread = threading.Thread(target=update_graph, args=(text, image_path), daemon=True)
+            
+        def thread_task(text, image_path):
+            try:
+                update_graph(text, image_path)  
+            finally:
+                generate_lock.release()
+        thread = threading.Thread(target=thread_task, args=(text, image_path), daemon=True)
         answer = ""
         while not (isinstance(answer, dict) and  "message" in answer and isinstance(answer["message"], str) and "images" in answer and isinstance(answer["images"], list) and all(isinstance(img, str) for img in answer["images"])):
             answer = agents[0](message=text, image_path=image_path, verbose=True)
@@ -81,6 +92,7 @@ def generate_answer():
         print(f"Done in: {time.time() - start_time}")
         return jsonify(answer)
     except Exception as e:
+        generate_lock.release() 
         print(e)
         return jsonify({"error": str(e)}), 500
 
@@ -105,4 +117,4 @@ def get_image(image_name):
 if __name__ == "__main__":
     print("🚀 Flask app has started!")
     start_neo4j(r"C:\Users\jager\.Neo4jDesktop\relate-data\dbmss\dbms-6feab08e-8790-4ddd-9be3-b9d01fe197ae", "neo4j")
-    app.run(host="0.0.0.0", port=5124, use_reloader=False)
+    app.run(host="0.0.0.0", port=5124, use_reloader=False, debug=True)
