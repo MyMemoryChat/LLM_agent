@@ -17,12 +17,12 @@ from PIL import Image
 load_dotenv()
 global format_mapping
 format_mapping = {
-        "LivingBeing": "(entity|livingbeing||{name}|{species}|{date_of_birth}|{additional_infos})",
-        "Location": "(entity|location||{name}|{city}|{country}|{continent}|{additional_infos})",
-        "Event": "(entity|event||{name}|{date}|{additional_infos})",
-        "Object": "(entity|object||{name}|{type}|{additional_infos})",
-        "Image": "(entity|image||{name}|{date}|{image_path}|{additional_infos})",
-        "relationship": "(relationship||{relation_type}|{from}|{to}|{description})"
+        "LivingBeing": "(entity|livingbeing||{uuid}|{name}|{species}|{date_of_birth}|{additional_infos})",
+        "Location": "(entity|location||{uuid}|{name}|{city}|{country}|{continent}|{additional_infos})",
+        "Event": "(entity|event||{uuid}|{name}|{date}|{additional_infos})",
+        "Object": "(entity|object||{uuid}|{name}|{type}|{additional_infos})",
+        "Image": "(entity|image||{uuid}|{name}|{date}|{image_path}|{additional_infos})",
+        "relationship": "(relationship||{uuid}|{relation_type}|{from}|{to}|{description})"
 }
 
 def format_conversion(element: dict[str], type_element: str) -> str:
@@ -70,7 +70,7 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
 
     if type_element == "":
         existing_entity = query_neo4j_graph("""
-            MATCH (n:__Entity__ {name: $element.name})
+            MATCH (n:__Entity__ {uuid: $element.uuid})
             RETURN n, labels(n) as labels
         """, params={"element": element})
         if existing_entity == []:
@@ -79,8 +79,8 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
             """, params={"element": element})
     else:
         existing_entity = query_neo4j_graph(f"""
-            MATCH (n:__Entity__:{type_element} {{name: $element.name}})
-            RETURN n
+            MATCH (n:__Entity__:{type_element} {{uuid: $element.uuid}})
+            RETURN n, labels(n) as labels
         """, params={"element": element})
         if existing_entity == []:
             query_neo4j_graph(f"""
@@ -132,15 +132,17 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
             query_neo4j_graph("MATCH (n:Query) DELETE n")
         else:
             query_neo4j_graph("MATCH (n:Query) REMOVE n:Query RETURN n")
-            
+        
         synonyms["n1Label"] = synonyms["n1Label"].map(lambda labels: next((s for s in labels if s not in {"__Entity__", "Query"}), None))
         synonyms["n2Label"] = synonyms["n2Label"].map(lambda labels: next((s for s in labels if s != "__Entity__"), None))
         
         synonyms.drop(columns=["similarity"], inplace=True)
     else:
         existing_entity = existing_entity[0]
+        
         labels = existing_entity["labels"]
         type_element = next((s for s in labels if s != "__Entity__"), None)
+        
         existing_entity = existing_entity['n']
         existing_entity.pop("embedding", None)
         
@@ -153,7 +155,9 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
         return f"No similar {synonym_type_filter if synonym_type_filter!='' else 'entities'} found."
     return synonyms
 
-def similar_entities(element: dict[str], type_element: str, n1Relations: str) -> tuple[str, str, str]:
+def similar_entities(element: dict[str], type_element: str = "", n1Relations: str = "") -> tuple[str, str, str]:
+    if type_element == "":
+        type_element = element["type_element"]
     if type_element == "livingbeing":
         type_element = "LivingBeing"
     else:
@@ -168,20 +172,22 @@ def similar_entities(element: dict[str], type_element: str, n1Relations: str) ->
     
     result ="\n"
     n1Label = synonyms["n1Label"]
+    synonyms["entity1"]["uuid"] = ""
     result+=format_conversion(synonyms["entity1"], n1Label)+"\n\n"
     
     result+=n1Relations + "\n"
         
     result+="-"*50+"\n"
-    
     n2Label = synonyms["n2Label"]
+    synonyms["entity2"]["uuid"] = ""
     result+=format_conversion(synonyms["entity2"], n2Label)+"\n\n"
         
     n2Relations = query_neo4j_graph(f"Match (n:{synonyms['n2Label']})-[r]-(m) where m.name=$name return type(r) as relation_type, m.name as from, n.name as to, r.description as description", params=synonyms['entity2'])
     for n2Relation in n2Relations:
+        n2Relation["uuid"]=""
         result+=format_conversion(n2Relation, "relationship")+"\n"
-    
-    return (result, synonyms["entity1"]["name"], synonyms["entity2"]["name"])
+            
+    return (result, synonyms["entity1"]["uuid"], synonyms["entity2"]["uuid"])
     
 @tool
 def load_image(image_path: str) -> Image.Image:
@@ -228,30 +234,30 @@ def update_neo4j_graph(knowledge: str) -> str:
             if entity["operation_type"] == "Updated":
                 # Update the entity with the new information
                 entity.pop("operation_type", None)
-                if entity["type_element"] == "livingbeing":
-                    element_type = "LivingBeing"
+                if entity["type_element"].lower() == "livingbeing":
+                    entity_type = "LivingBeing"
                 else:
-                    element_type = entity["type_element"].capitalize()
+                    entity_type = entity["type_element"].capitalize()
                 entity.pop("type_element", None)
-                query_neo4j_graph(f"MERGE (n:`__Entity__`:{element_type} {{name:$name}}) SET n = $entity", {"name":entity["name"], "entity":entity})
+                entity.pop("type_element", None)
+                uuid = entity["uuid"]
+                query_neo4j_graph("MERGE (n:`__Entity__`:"+entity_type+" {uuid: $uuid}) SET n = $entity", {"uuid":uuid, "entity":entity})
                 
                 # Update the relationships of the entity
                 for relationship in [relationships for relationships in knowledge if "relationship" in relationships and entity["name"] in relationships]:
                     element = format_extraction(relationship, type_element='relationship')
+                    uuid = entity["uuid"]
                     if element["operation_type"] == "Deleted":
-                        query_neo4j_graph("Match (m)-[r:"+element['relation_type']+"]->(n) where m.name=$from and n.name=$to DELETE r", params={"from": element["from"], "to": element["to"]})
+                        query_neo4j_graph("MATCH ()-[r:"+element['relation_type']+"]->() WHERE n.uuid = $uuid DELETE r", params={"uuid": uuid})
                         continue
                     element.pop("operation_type", None)
                     element.pop("type_element", None)
-                    query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+element['relation_type']+"]->(n) SET r.description = $description", params={"from": element["from"], "to": element["to"], "description": element["description"]})
+                    query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+element['relation_type']+" {uuid : $uuid}]->(n) SET r.description = $description", params={"from": element["from"], "to": element["to"], "uuid": uuid, "description": element["description"]})
                 
             elif entity["operation_type"] == "Deleted":
                 # Delete the corresponding name and label entity and its relationships
-                if entity["type_element"] == "livingbeing":
-                    element_type = "LivingBeing"
-                else:
-                    element_type = entity["type_element"].capitalize()
-                query_neo4j_graph(f"MATCH (n:{element_type} {{name: $name}}) DETACH DELETE n", {"name":entity["name"]})
+                uuid = entity["uuid"]
+                query_neo4j_graph("MATCH (n:`__Entity__`) WHERE n.uuid = $uuid DETACH DELETE n", {"uuid":uuid})
             elif entity["operation_type"] == "Created":
                 # Concatenate the relationships of the entity
                 entity_relationships = [
@@ -260,8 +266,8 @@ def update_neo4j_graph(knowledge: str) -> str:
                 ]
                 
                 # Create the new entity and do a embedding similarity search to find similar entities
-                synonyms, n1Name, n2Name = similar_entities(entity, entity["type_element"], "\n".join(entity_relationships))
-                print("Similar to: ", n2Name, synonyms,"\n -------------------------------")
+                synonyms, n1Uuid, n2Uuid = similar_entities(entity, entity["type_element"], "\n".join(entity_relationships))
+                print("Similar to: ", synonyms,"\n -------------------------------")
                 if synonyms != "":
                     # If there exists synonyms, pass it to an agent to check if the entities are the same or not.
                     optimizer = OptimizerAgent()
@@ -274,10 +280,10 @@ def update_neo4j_graph(knowledge: str) -> str:
                         element = format_extraction(relation, type_element='relationship')
                         element.pop("operation_type", None)
                         element.pop("type_element", None)
-                        query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+element['relation_type']+" {description: $description}]->(n)", params=element)
+                        query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+element['relation_type']+"]->(n) SET r.description = $description", params={"from": element["from"], "to": element["to"], "description": element["description"]})
                 else:
                     # If merge, delete the old and new entity and create a new "merged" one
-                    query_neo4j_graph("MATCH (n) where n.name=$n1Name or n.name=$n2Name DETACH DELETE n", {"n1Name":n1Name, "n2Name":n2Name})
+                    query_neo4j_graph("MATCH (n) where n.n1Uuid=$n1Uuid or n.n2Uuid=$n2Uuid DETACH DELETE n", {"n1Uuid":n1Uuid, "n2Uuid":n2Uuid})
                     for answer in [line for line in modelAnswer.strip().split("\n") if "entity" in line]:
                         print(answer)
                         if "livingbeing" in answer:
@@ -296,7 +302,7 @@ def update_neo4j_graph(knowledge: str) -> str:
                             print(relationship)
                             relationship = format_extraction(relationship, type_element='relationship')
                             relationship.pop("operation_type", None)
-                            query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to CREATE (m)-[:"+relationship['relation_type']+" {description: $description}]->(n)", params=relationship)
+                            query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[:"+relationship['relation_type']+" {description: $description}]->(n)", params=relationship)
             else:
                 return f"Operation type not recognized {entity['operation_type']}: Only [Updated, Deleted, Created] are accepted."
             
@@ -306,6 +312,13 @@ def update_neo4j_graph(knowledge: str) -> str:
                 text_node_properties=['name', 'additional_infos', 'date','species','city','country','continent','type', 'date_of_birth'],
                 embedding_node_property='embedding'
             )
+            
+            # Create uuid for nodes and relationships which don't have one
+            query_neo4j_graph("""
+                MATCH (n)-[r]-()
+                WHERE n.uuid IS NULL OR r.uuid is NULL
+                SET n.uuid = randomUUID(), r.uuid = randomUUID()
+            """)
     elif (relations := [relations for relations in knowledge if "relations" in relations]):
         for relation in relations:
             relation = format_extraction(relation, type_element='relationship')
@@ -315,6 +328,13 @@ def update_neo4j_graph(knowledge: str) -> str:
                 relation.pop("operation_type", None)
                 relation.pop("type_element", None)
                 query_neo4j_graph("MATCH (m:__Entity__), (n:__Entity__) where m.name=$from and n.name=$to MERGE (m)-[r:"+relation['relation_type']+"]->(n) SET r.description = $description", params={"from": relation["from"], "to": relation["to"], "description": relation["description"]})
+        
+        # Create uuid for nodes and relationships which don't have one
+        query_neo4j_graph("""
+            MATCH (n)-[r]-()
+            WHERE n.uuid IS NULL OR r.uuid is NULL
+            SET n.uuid = randomUUID(), r.uuid = randomUUID()
+        """)
     else:
         return "No entities or relationships found in the arguments: "+"\n".join(knowledge)
     return "Successfully updated the Neo4j graph."
@@ -349,7 +369,7 @@ def search_neo4j_graph(question: str) -> str:
     result += "\n"
     for _, row in top_5.iterrows():
         relations = query_neo4j_graph(
-            "MATCH (m)-[r]-(n) WHERE m.name=$name RETURN type(r) as relation_type, m.name as from, n.name as to, r.description as description",
+            "MATCH (m)-[r]-(n) WHERE m.name=$name RETURN r.uuid as uuid, type(r) as relation_type, m.name as from, n.name as to, r.description as description",
             params=row["entity2"]
         )
         for relation in relations:

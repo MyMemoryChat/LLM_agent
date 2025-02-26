@@ -173,7 +173,7 @@ class AnswerAgent(ReActAgent):
         
         completion = super().__call__(message=[image, message], verbose=verbose)
         try:
-            completion = completion.split("Answer:")[1].split("End")[-2].strip()
+            completion = completion.split("Answer:")[1].replace("End", '').strip()
         except IndexError:
             pass
         try:
