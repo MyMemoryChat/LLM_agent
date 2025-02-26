@@ -1,23 +1,45 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
+from apscheduler.schedulers.background import BackgroundScheduler
+from backup import backup
 import threading
 from flask_cors import CORS
 from agent import AnswerAgent, UpdateAgent
 from tools import query_neo4j_graph
-from PIL import Image
+from backup import start_neo4j, stop_neo4j
 import os
 import base64
 import re
 import time
+import atexit
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {
-    "origins": ["http://192.168.2.34:4173", "http://localhost:4173"]
+    "origins": ["http://192.168.2.34:4173", "http://localhost:4173", "http://192.168.27.65:4173"]
 }})
+
+# Close the neo4j console when closing the app
+def on_shutdown():
+    print("🛑 Flask app is shutting down!")
+    stop_neo4j(r"C:\Users\jager\.Neo4jDesktop\relate-data\dbmss\dbms-6feab08e-8790-4ddd-9be3-b9d01fe197ae")
+atexit.register(on_shutdown) 
 
 @app.after_request
 def after_request(response):
     print(f"Request from: {request.origin}")
     return response
+
+# Make a backup every 30 minutes and locks the API during it
+backup_lock = threading.Lock()
+def backup_wrapper():
+    """Wraps the backup function with a lock to prevent API access during backup."""
+    with backup_lock:
+        print("🔒 Backup started, API is locked...")
+        backup()
+        print("✅ Backup completed, API is unlocked.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(backup_wrapper, 'interval', minutes=30) 
+scheduler.start()
 
 image_folder = "./images"
 agents = [AnswerAgent(), UpdateAgent()]
@@ -41,8 +63,13 @@ def save_image(image_base64):
 def update_graph(message:str, image_path:str=""):
     agents[1](message=message, image_path=image_path, verbose=True)
 
+# Lock to prevent concurrent generations
+generate_lock = threading.Lock()
+
 @app.route("/generate", methods=["POST"])
 def generate_answer():
+    if not generate_lock.acquire(blocking=False):  # Try to acquire lock, if unavailable return busy message
+        return jsonify({"error": "Server is busy processing another request"}), 429
     try:
         start_time = time.time()
         text = request.json.get("text")
@@ -51,7 +78,13 @@ def generate_answer():
             image_path = save_image(image_base64)
         else:
             image_path = ""
-        thread = threading.Thread(target=update_graph, args=(text, image_path))
+            
+        def thread_task(text, image_path):
+            try:
+                update_graph(text, image_path)  
+            finally:
+                generate_lock.release()
+        thread = threading.Thread(target=thread_task, args=(text, image_path), daemon=True)
         answer = ""
         while not (isinstance(answer, dict) and  "message" in answer and isinstance(answer["message"], str) and "images" in answer and isinstance(answer["images"], list) and all(isinstance(img, str) for img in answer["images"])):
             answer = agents[0](message=text, image_path=image_path, verbose=True)
@@ -59,6 +92,7 @@ def generate_answer():
         print(f"Done in: {time.time() - start_time}")
         return jsonify(answer)
     except Exception as e:
+        generate_lock.release() 
         print(e)
         return jsonify({"error": str(e)}), 500
 
@@ -81,4 +115,6 @@ def get_image(image_name):
     return jsonify(search_result)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5124, debug=True)
+    print("🚀 Flask app has started!")
+    start_neo4j(r"C:\Users\jager\.Neo4jDesktop\relate-data\dbmss\dbms-6feab08e-8790-4ddd-9be3-b9d01fe197ae", "neo4j")
+    app.run(host="0.0.0.0", port=5124, use_reloader=False, debug=True)
