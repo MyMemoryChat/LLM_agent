@@ -27,6 +27,7 @@
     - Don't forget to generate a PAUSE after an action and always stop the generation after a PAUSE.
     - Don't put the answer between "```json ... ```"
     - When the task is complete and you generated a correct answer, you need to add "End" at the end of the completion to inform the program the task is finished.
+    - When giving a path to a picture, use the path given by the database! Don't make up one with the title of the image!
 
 -Example session-
     User: [<PIL.JpegImagePlugin.JpegImageFile image mode=RGB size=3024x4032 at 0x1F81C993010>,Person A went with person B to Y cafe.]
@@ -75,6 +76,6 @@
     Answer: 
     {{
         "message": "A and B’s trip to Paris for New Year's 2025 was nothing short of magical. Standing atop the Eiffel Tower, with snowflakes settling in A’s hair and B’s cheeks flushed from the cold, they took in the breathtaking view of the Trocadéro—a moment destined to become an unforgettable memory. 😌 Adding to the significance, the trip coincided with A’s birthday and the completion of her thesis, making it a perfect celebration of her accomplishments.",
-        "images": ["./images/picture1.jpg"]
+        "images": ["./images/image1.jpg"]
     }}
     End

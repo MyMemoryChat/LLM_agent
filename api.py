@@ -5,27 +5,44 @@ import threading
 from flask_cors import CORS
 from agent import AnswerAgent, UpdateAgent
 from tools import query_neo4j_graph
+from backup import start_neo4j, stop_neo4j
 import os
 import base64
 import re
 import time
+import atexit
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {
-    "origins": ["http://192.168.2.34:4173", "http://localhost:4173"]
+    "origins": ["http://192.168.2.34:4173", "http://localhost:4173", "http://192.168.27.65:4173"]
 }})
+
+# Close the neo4j console when closing the app
+def on_shutdown():
+    print("🛑 Flask app is shutting down!")
+    stop_neo4j(r"C:\Users\jager\.Neo4jDesktop\relate-data\dbmss\dbms-6feab08e-8790-4ddd-9be3-b9d01fe197ae")
+atexit.register(on_shutdown) 
 
 @app.after_request
 def after_request(response):
     print(f"Request from: {request.origin}")
     return response
 
-image_folder = "./images"
-agents = [AnswerAgent(), UpdateAgent()]
+# Make a backup every 30 minutes and locks the API during it
+backup_lock = threading.Lock()
+def backup_wrapper():
+    """Wraps the backup function with a lock to prevent API access during backup."""
+    with backup_lock:
+        print("🔒 Backup started, API is locked...")
+        backup()
+        print("✅ Backup completed, API is unlocked.")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(backup, 'interval', minutes=30) 
+scheduler.add_job(backup_wrapper, 'interval', minutes=30) 
 scheduler.start()
+
+image_folder = "./images"
+agents = [AnswerAgent(), UpdateAgent()]
 
 def save_image(image_base64):
     try:
@@ -86,4 +103,6 @@ def get_image(image_name):
     return jsonify(search_result)
 
 if __name__ == "__main__":
+    print("🚀 Flask app has started!")
+    start_neo4j(r"C:\Users\jager\.Neo4jDesktop\relate-data\dbmss\dbms-6feab08e-8790-4ddd-9be3-b9d01fe197ae", "neo4j")
     app.run(host="0.0.0.0", port=5124, use_reloader=False)

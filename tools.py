@@ -71,7 +71,7 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
     if type_element == "":
         existing_entity = query_neo4j_graph("""
             MATCH (n:__Entity__ {name: $element.name})
-            RETURN n
+            RETURN n, labels(n) as labels
         """, params={"element": element})
         if existing_entity == []:
             query_neo4j_graph("""
@@ -138,8 +138,12 @@ def embedding_search(element: dict[str], type_element: str = "", expected_output
         
         synonyms.drop(columns=["similarity"], inplace=True)
     else:
-        existing_entity = existing_entity[0]['n']
+        existing_entity = existing_entity[0]
+        labels = existing_entity["labels"]
+        type_element = next((s for s in labels if s != "__Entity__"), None)
+        existing_entity = existing_entity['n']
         existing_entity.pop("embedding", None)
+        
         synonyms = pd.DataFrame([{"n1Label": type_element, "n2Label": type_element, "entity1": element, "entity2": existing_entity}])
     
     if expected_output_type:
