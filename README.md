@@ -4,13 +4,16 @@ This agent is the central component that handles interactions between the client
 
 ## Usage
 
-To launch the agent, use one of these commands:
+- To launch the agent, use one of these commands:
 
-- **Development Mode:**  
+    - **Development Mode:**  
     Run `python api.py`
     
-- **Production Mode:**  
+    - **Production Mode:**  
     Run `python -m waitress --listen=0.0.0.0:5124 api:app`
+
+- Update the backup and restore db_path variable to your neo4j database path, as well as the db_name if required
+
 
 ## Neo4j Console
 
